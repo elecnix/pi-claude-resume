@@ -221,6 +221,12 @@ export function renderTranscript(transcript: ClaudeTranscript, options: RenderOp
 	let tailCount = total > 1 ? 1 : 0;
 	let assembled = assemble(header, blocks, headCount, tailCount);
 	if (total > 2) {
+		// Complexity note: every growth step re-joins the whole candidate text, so this loop is
+		// quadratic in the number of turns and the text length. It is left as it is on purpose: the
+		// budget caps the joined text at `maxChars` (120 000 by default), a session with thousands
+		// of turns still finishes in milliseconds, and a running-length accumulator would have to
+		// reproduce `assemble`'s separator and marker arithmetic exactly — a second implementation
+		// of the format's arithmetic is a worse risk than the redundant joins it would remove.
 		let grew = true;
 		while (grew) {
 			grew = false;
