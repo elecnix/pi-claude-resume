@@ -642,6 +642,8 @@ describe("resumeClaudeSession — successful injection", () => {
 		expect(renderedTranscript?.stats).toBe(transcript.stats);
 		expect(renderedTranscript?.meta.sessionId).toBe(SESSION_ID);
 		expect(typeof renderOptions?.mapTool).toBe("function");
+		// The session's real tool list reaches the renderer, which marks calls pi lacks (DP7).
+		expect(renderOptions?.piTools).toEqual(["bash", "read", "edit"]);
 	});
 
 	it("reads the located file once, as UTF-8, and parses exactly those bytes", async () => {

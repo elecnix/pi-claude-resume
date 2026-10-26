@@ -197,6 +197,11 @@ export interface RenderOptions {
 	maxToolResultChars?: number;
 	maxToolInputChars?: number;
 	mapTool?: ToolMapper;
+	/**
+	 * pi tool names active in this session, so a mapped call pi does not have can be marked as
+	 * unavailable rather than passed off as a native call (DP7). Falls back to pi's own built-ins.
+	 */
+	piTools?: readonly string[];
 }
 
 export interface RenderResult {

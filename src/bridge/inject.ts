@@ -121,6 +121,8 @@ async function runBridge(host: BridgeHost, options: BridgeOptions): Promise<Brid
 	const rendered = renderTranscript({ ...transcript, meta }, {
 		maxChars: options.maxChars,
 		mapTool: mapToolCall,
+		// The session's real tool list, so a mapped call pi lacks is marked as such (DP7).
+		piTools: host.piTools,
 	});
 	const boundary = buildBoundaryMessage({
 		meta,

@@ -324,6 +324,78 @@ describe("renderTranscript whole-text budget", () => {
 	});
 });
 
+describe("renderTranscript tool availability (DP7)", () => {
+	/** Maps Claude's Task to pi's `subagent`, a tool only a subagent extension provides. */
+	const subagentMapper: ToolMapper = (_claudeName, input) => ({
+		piName: "subagent",
+		input: (input ?? {}) as Record<string, unknown>,
+		notes: [],
+	});
+
+	const taskCall: ClaudeToolCall[] = [
+		{ id: "toolu_synthetic_9", claudeName: "Task", input: { prompt: "Find the fixture" } },
+	];
+
+	it("marks a mapped call whose pi tool is not active in this session", () => {
+		const result = render(transcriptWith([{ kind: "assistant", text: "Delegating.", tools: taskCall }]), {
+			mapTool: subagentMapper,
+			piTools: ["bash", "read", "edit"],
+		});
+
+		expect(result.text).toContain("- tool subagent(");
+		expect(result.text).toContain(
+			"notes: subagent is not an active tool in this pi session: this Task call happened in Claude Code and is not available here.",
+		);
+	});
+
+	it("leaves an active pi tool unmarked", () => {
+		const result = render(transcriptWith([{ kind: "assistant", text: "Delegating.", tools: taskCall }]), {
+			mapTool: subagentMapper,
+			piTools: ["bash", "read", "edit", "subagent"],
+		});
+
+		expect(result.text).toContain("- tool subagent(");
+		expect(result.text).not.toContain("not an active tool");
+	});
+
+	it("falls back to pi's own built-in tools when the caller has no runtime list", () => {
+		// `intercom` is not a pi built-in, so even a caller that passes no list gets the marking.
+		const intercomMapper: ToolMapper = () => ({ piName: "intercom", input: { action: "send" }, notes: [] });
+		const result = render(
+			transcriptWith([
+				{
+					kind: "assistant",
+					text: "Messaging.",
+					tools: [{ id: "toolu_synthetic_8", claudeName: "SendMessage", input: { message: "hello" } }],
+				},
+			]),
+			{ mapTool: intercomMapper },
+		);
+
+		expect(result.text).toContain("intercom is not an active tool in this pi session");
+		expect(result.text).toContain("this SendMessage call happened in Claude Code");
+	});
+
+	it("marks every call of a turn that pi cannot make, without touching the pi-native ones", () => {
+		const mixed: ClaudeToolCall[] = [
+			{ id: "toolu_synthetic_1", claudeName: "Bash", input: { command: "ls" } },
+			{ id: "toolu_synthetic_2", claudeName: "Task", input: { prompt: "Find it" } },
+		];
+		const mapper: ToolMapper = (claudeName, input) =>
+			claudeName === "Task"
+				? { piName: "subagent", input: (input ?? {}) as Record<string, unknown>, notes: [] }
+				: { piName: "bash", input: (input ?? {}) as Record<string, unknown>, notes: [] };
+
+		const result = render(transcriptWith([{ kind: "assistant", text: "Working.", tools: mixed }]), {
+			mapTool: mapper,
+			piTools: ["bash"],
+		});
+
+		expect(result.text).toContain("- tool bash({\"command\":\"ls\"})");
+		expect(result.text.match(/not an active tool/g)).toHaveLength(1);
+	});
+});
+
 describe("renderTranscript injection and determinism", () => {
 	it("passes Claude's tool name and raw arguments to the injected mapper", () => {
 		const seen: Array<[string, unknown]> = [];

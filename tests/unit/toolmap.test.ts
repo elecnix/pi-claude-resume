@@ -19,8 +19,20 @@ import {
 const SHELL_QUOTE_ESCAPE = `'"'"'`;
 
 describe("PI_CORE_TOOLS", () => {
-	it("lists pi's built-in tools", () => {
-		expect([...PI_CORE_TOOLS]).toEqual(["read", "bash", "edit", "write", "grep", "find", "ls", "questionnaire"]);
+	it("lists pi's real built-in tools and nothing else", () => {
+		// pi's core tool set; `subagent` and `intercom` are extensions, not built-ins (DP7).
+		expect([...PI_CORE_TOOLS]).toEqual([
+			"read",
+			"bash",
+			"edit",
+			"write",
+			"grep",
+			"find",
+			"ls",
+			"powershell",
+		]);
+		expect(PI_CORE_TOOLS).not.toContain("subagent");
+		expect(PI_CORE_TOOLS).not.toContain("intercom");
 	});
 
 	it("has no duplicates", () => {

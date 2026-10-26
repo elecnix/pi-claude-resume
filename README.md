@@ -81,7 +81,10 @@ nothing is half-injected (DP11).
 | Bookkeeping entries (mode, permission-mode, file-history snapshots, api-request records) | Dropped |
 
 Claude-only tools that pi does not have are not dressed up to look native: the call is rendered
-as a declared, visibly lossy placeholder that names the original tool (DP7).
+as a declared, visibly lossy placeholder that names the original tool (DP7). A call whose pi name
+exists but is not active in this session — a `Task` mapped to `subagent`, say, when no subagent
+extension is installed — is rendered with a note that it happened in Claude Code and is not
+available here.
 
 ## How it works
 

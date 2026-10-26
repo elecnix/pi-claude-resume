@@ -27,7 +27,7 @@ import type {
 	ToolMapper,
 } from "../types.ts";
 import { normalizeBudget, truncateMiddle, truncatePayload } from "../shared/truncate.ts";
-import { mapToolCall } from "./toolmap.ts";
+import { PI_CORE_TOOLS, mapToolCall } from "./toolmap.ts";
 
 /** Blocks are separated by one blank line, so the injected text stays scannable. */
 const BLOCK_SEPARATOR = "\n\n";
@@ -40,6 +40,8 @@ interface RenderTurnContext {
 	maxToolResultChars: number;
 	maxToolInputChars: number;
 	mapTool: ToolMapper;
+	/** pi tool names active in this session; a mapped call outside this list is marked (DP7). */
+	activeTools: readonly string[];
 }
 
 interface RenderedTurn {
@@ -94,6 +96,15 @@ function renderToolCalls(
 		// One blank line before each call keeps a multi-call turn readable.
 		lines.push("", `- tool ${mapping.piName}(${input.text})`);
 		const notes = mapping.notes.filter((note) => typeof note === "string" && note.trim().length > 0);
+		// DP7: a name pi knows but this session does not have must not read as a call the model can
+		// repeat. `subagent` and `intercom` are the common cases: Claude Code had them, a bare pi
+		// install does not, and the transcript has to say so rather than pretend they are native.
+		if (!ctx.activeTools.includes(mapping.piName)) {
+			const called = tool.claudeName === "" ? "tool" : tool.claudeName;
+			notes.push(
+				`${mapping.piName} is not an active tool in this pi session: this ${called} call happened in Claude Code and is not available here.`,
+			);
+		}
 		if (notes.length > 0) lines.push(`  notes: ${notes.join("; ")}`);
 	}
 	return { lines, payloadTruncated };
@@ -179,6 +190,9 @@ export function renderTranscript(transcript: ClaudeTranscript, options: RenderOp
 		// The real mapping table lives in toolmap.ts; tests inject a fake so this file can be
 		// specified without it (DP3, DR4).
 		mapTool: options.mapTool ?? mapToolCall,
+		// The runtime list when the caller has one, pi's own built-ins otherwise; the adapter
+		// always has one (`pi.getActiveTools()`), so the fallback only serves direct callers.
+		activeTools: options.piTools ?? PI_CORE_TOOLS,
 	};
 
 	const header = renderHeader(transcript.meta);

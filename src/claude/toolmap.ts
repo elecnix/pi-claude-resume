@@ -9,7 +9,16 @@
  */
 import type { ToolMapper, ToolMapping } from "../types.ts";
 
-/** pi's built-in tool names, used when the runtime list is unavailable. */
+/**
+ * pi's built-in tool names, and nothing else: no `subagent`, no `intercom` -- those arrive with
+ * optional extensions that a bare `pi` install does not have.
+ *
+ * The renderer judges a mapped call against the list the host reports for the session
+ * (`pi.getActiveTools()`, threaded through `RenderOptions.piTools`) and falls back to this one
+ * only when a caller renders without a runtime list. It is a *fallback*, not the source of truth:
+ * marking a call unavailable is a claim about this session, and the runtime list is the only
+ * honest source for it (DP7, DP8).
+ */
 export const PI_CORE_TOOLS: readonly string[] = [
 	"read",
 	"bash",
@@ -18,7 +27,7 @@ export const PI_CORE_TOOLS: readonly string[] = [
 	"grep",
 	"find",
 	"ls",
-	"questionnaire",
+	"powershell",
 ];
 
 /** Tool name used when a Claude tool has no pi equivalent. */
