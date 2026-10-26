@@ -50,14 +50,22 @@ export default function piClaudeResume(pi: ExtensionAPI): void {
 			// The bridge reports failures in its result; a throw means something escaped it. It is
 			// still a failed resume, so it must be visible rather than swallowed (DP11).
 			const message = error instanceof Error ? error.message : String(error);
-			reportFailure(ctx, `pi-claude-resume: bridge-error: ${message}`, `Claude resume failed: ${message}`);
+			reportFailure(
+				ctx,
+				`pi-claude-resume: bridge-error: ${message}`,
+				`Claude resume failed: ${message}`,
+			);
 			return;
 		}
 
 		if (!result.ok) {
 			const code = result.error?.code ?? "unknown";
 			const message = result.error?.message ?? "resume failed without a diagnostic";
-			reportFailure(ctx, `pi-claude-resume: ${code}: ${message}`, `Claude resume failed: ${message}`);
+			reportFailure(
+				ctx,
+				`pi-claude-resume: ${code}: ${message}`,
+				`Claude resume failed: ${message}`,
+			);
 			return;
 		}
 

@@ -10,7 +10,7 @@
 import type { ToolMapper, ToolMapping } from "../types.ts";
 
 /**
- * pi's built-in tool names, and nothing else: no `subagent`, no `intercom` -- those arrive with
+ * pi's built-in tool names, and nothing else: no `subagent`, no `intercom` — those arrive with
  * optional extensions that a bare `pi` install does not have.
  *
  * The renderer judges a mapped call against the list the host reports for the session
@@ -112,6 +112,7 @@ const GREP_CONSUMED: ReadonlySet<string> = new Set([
 	"path",
 	"glob",
 	"-i",
+	"-n",
 	"-A",
 	"-B",
 	"-C",
@@ -294,6 +295,11 @@ function buildGrep(args: Args): Built {
 	if (args["-i"] === true) parts.push("-i");
 	if (hasText(args.glob)) parts.push("-g", quoteForShell(args.glob));
 	addContextFlags(parts, args, notes);
+	// `-n` is Claude's line-number switch, on by default; `rg -n` always numbers lines, so the only
+	// thing worth saying is the case the generated command cannot honour.
+	if (args["-n"] === false) {
+		notes.push("Grep's -n was false, but the generated command always prints line numbers.");
+	}
 
 	// rg's own multiline switch; anything other than `true` means Claude did not ask for it.
 	if (args.multiline === true) {

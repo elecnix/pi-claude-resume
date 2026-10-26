@@ -376,6 +376,15 @@ describe("Grep command generation", () => {
 		expect(mapping.notes.join(" ")).toContain("prints every match");
 	});
 
+	it("keeps rg's always-on line numbers and says so when Claude asked for none", () => {
+		expect(mapToolCall("Grep", { pattern: "TODO", "-n": true }).input.command).toBe(
+			"rg -n -- 'TODO'",
+		);
+		const mapping = mapToolCall("Grep", { pattern: "TODO", "-n": false });
+		expect(mapping.input.command).toBe("rg -n -- 'TODO'");
+		expect(mapping.notes.join(" ")).toContain("always prints line numbers");
+	});
+
 	it("names an argument it has no translation for, rather than dropping it", () => {
 		// `type` is Claude's file-type filter; the generated rg line does not carry it.
 		const mapping = mapToolCall("Grep", { pattern: "TODO", type: "ts", offset: 5 });
