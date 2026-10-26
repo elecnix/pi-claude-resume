@@ -29,6 +29,8 @@ README
 Vale
 vale
 Cite
+Ollama
+Ollama Cloud
 dupdelta
 subagent
 lossy

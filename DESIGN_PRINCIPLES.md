@@ -123,8 +123,10 @@ pre-existing, already-accepted duplication, which is how a warning becomes noise
 ## DP15 — Reviewers are part of the toolchain
 
 `elecnix/cite` reviews every pull request and its findings are addressed before merge, the same
-way a failing test is. A review comment that contradicts these principles is answered with a
-citation to the principle it disagrees with — or with an amendment to this file.
+way a failing test is. The provider is fixed in the workflow rather than selected by a repository
+variable, because a silent provider switch changes review behaviour with no diff. A review comment
+that contradicts these principles is answered with a citation to the principle it disagrees with —
+or with an amendment to this file.
 
 The prose is linted too: `vale --config=.vale.ini .` runs on every pull request, because a
 misspelling or a doubled word in the documentation is a defect of the same kind as a failing test,

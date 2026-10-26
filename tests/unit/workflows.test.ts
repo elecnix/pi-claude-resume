@@ -193,22 +193,31 @@ describe("review.yml", () => {
 		expect(line).not.toMatch(/elecnix\/cite@v/);
 	});
 
-	it("reads the model API key from repository secrets", () => {
+	it("reads the model API key from the Ollama Cloud secret", () => {
 		const key = childValue(requireBlock(review, /^\s{8}with:\s*$/), "model_api_key") ?? "";
-		expect(key).toContain("secrets.MODEL_API_KEY");
-		expect(key).toContain("secrets.OLLAMA_API_KEY");
-		expect(key).toContain("vars.CITE_PROVIDER == 'openrouter'");
+		expect(key).toBe("${{ secrets.OLLAMA_API_KEY }}");
 	});
 
-	it("keeps exactly the five documented with inputs", () => {
+	it("fixes the provider to Ollama Cloud so no variable can switch it", () => {
+		// A silent provider switch changes review behaviour with no diff in this repository, so
+		// the router plumbing must not come back (DP15).
+		expect(review).not.toContain("CITE_PROVIDER");
+		expect(review).not.toContain("MODEL_API_KEY");
+		expect(review.toLowerCase()).not.toContain("openrouter");
+	});
+
+	it("keeps exactly the four documented with inputs, all pointing at Ollama Cloud", () => {
 		const withBlock = requireBlock(review, /^\s{8}with:\s*$/);
 		expect(childKeys(withBlock).sort()).toEqual([
 			"model_api_key",
 			"model_base_url",
 			"model_id",
-			"require_parameters",
 			"structured_output",
 		]);
+		expect(childValue(withBlock, "model_base_url")).toBe("https://ollama.com/v1");
+		expect(childValue(withBlock, "model_id")).toBe("deepseek-v4.1-flash");
+		// Ollama Cloud serves no router, so the schema arrives through tool calling.
+		expect(childValue(withBlock, "structured_output")).toBe("tools");
 	});
 
 	it("cancels superseded reviews for the same pull request", () => {

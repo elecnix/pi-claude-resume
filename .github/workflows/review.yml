@@ -24,9 +24,10 @@ jobs:
       # the code that runs with `pull-requests: write` and `checks: write`.
       - name: Review this pull request with Cite
         uses: elecnix/cite@db01467aae47c33f16ec6b404d3cdbd13ec94f12  # v0.15.1
+        # The provider is fixed to Ollama Cloud here, not selected by a repository variable: a
+        # silent provider switch changes review behaviour with no diff in this repository.
         with:
-          structured_output: ${{ vars.CITE_PROVIDER == 'openrouter' && 'response_format' || 'tools' }}
-          require_parameters: ${{ vars.CITE_PROVIDER == 'openrouter' }}
-          model_api_key: ${{ vars.CITE_PROVIDER == 'openrouter' && secrets.MODEL_API_KEY || secrets.OLLAMA_API_KEY }}
-          model_base_url: ${{ vars.CITE_PROVIDER == 'openrouter' && 'https://openrouter.ai/api/v1' || 'https://ollama.com/v1' }}
-          model_id: ${{ vars.CITE_PROVIDER == 'openrouter' && 'deepseek/deepseek-v4.1-flash' || 'deepseek-v4.1-flash' }}
+          model_api_key: ${{ secrets.OLLAMA_API_KEY }}
+          model_base_url: https://ollama.com/v1
+          model_id: deepseek-v4.1-flash
+          structured_output: tools

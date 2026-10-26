@@ -163,8 +163,8 @@ file in the same commit. See [AGENTS.md](AGENTS.md) for agent-facing instruction
 - The duplication a pull request introduces is reported by `dupdelta`, with the added code
   annotated inline. It warns and does not fail the build: what the repository had before this
   branch stays quiet, and only new duplication is reported (DP14).
-- Every pull request is reviewed by the Cite reviewer, and its findings are addressed before
-  merge the same way a failing test is (DP15).
+- Every pull request is reviewed by the Cite reviewer on Ollama Cloud, and its findings are
+  addressed before merge the same way a failing test is (DP15).
 
 ## License
 
