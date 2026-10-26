@@ -346,6 +346,30 @@ describe("resumeClaudeSession — idempotency (DP10)", () => {
 		expect(hasInjected).toHaveBeenCalledWith(SESSION_ID);
 	});
 
+	it("keys both the idempotency probe and the recorded details on the located session id (DP10)", async () => {
+		// A copied or forked session file: the entries still carry the id of the conversation the
+		// file was copied from, so the file name and the entry field disagree.
+		const fileId = "0f9c1d2e-0000-4000-8000-0000000000ff";
+		const entryId = "0f9c1d2e-0000-4000-8000-000000000001";
+		const transcript = syntheticTranscript({ sessionId: entryId, path: sessionPath(fileId) });
+		await writeFile(transcript.meta.path, FIXTURE_RAW, "utf8");
+		mockLocateOk(transcript.meta.path, fileId);
+		mockParse(transcript);
+		const { host, sent, hasInjected } = createHost();
+
+		const result = await resumeClaudeSession(host, { spec: fileId });
+
+		const [transcriptMessage] = expectTwoMessages(sent);
+		const probeId = hasInjected.mock.calls[0]?.[0];
+		const recordedId = (transcriptMessage.details as { sessionId?: string }).sessionId;
+		// The probe and the record must agree, or the next run re-imports the same history.
+		expect(probeId).toBe(fileId);
+		expect(recordedId).toBe(probeId);
+		expect(result.sessionId).toBe(probeId);
+		expect(vi.mocked(buildBoundaryMessage).mock.calls[0]?.[0]?.meta.sessionId).toBe(probeId);
+		expect(vi.mocked(renderTranscript).mock.calls[0]?.[0]?.meta.sessionId).toBe(probeId);
+	});
+
 	it("does not consult hasInjected when force is set", async () => {
 		await arrangeSession();
 		const { host, hasInjected, sent } = createHost();
@@ -612,7 +636,11 @@ describe("resumeClaudeSession — successful injection", () => {
 		await resumeClaudeSession(host, { spec: SESSION_ID });
 
 		const [renderedTranscript, renderOptions] = vi.mocked(renderTranscript).mock.calls[0] ?? [];
-		expect(renderedTranscript).toBe(transcript);
+		// The turns and stats are the parsed ones, untouched; only the identity is normalized to
+		// the located file so the header and the boundary notice name the same session (DP10).
+		expect(renderedTranscript?.turns).toBe(transcript.turns);
+		expect(renderedTranscript?.stats).toBe(transcript.stats);
+		expect(renderedTranscript?.meta.sessionId).toBe(SESSION_ID);
 		expect(typeof renderOptions?.mapTool).toBe("function");
 	});
 

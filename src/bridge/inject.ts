@@ -115,9 +115,10 @@ async function runBridge(host: BridgeHost, options: BridgeOptions): Promise<Brid
 	const raw = await readSessionFile(located.path);
 	const transcript = parseSession(raw, located);
 
-	// 5. Render the bounded transcript (DP9) and the boundary notice (DP8).
+	// 5. Render the bounded transcript (DP9) and the boundary notice (DP8). The renderer sees the
+	//    normalized identity too, so the header and the notice cannot name different sessions.
 	const meta = normalizeMeta(transcript.meta, located);
-	const rendered = renderTranscript(transcript, {
+	const rendered = renderTranscript({ ...transcript, meta }, {
 		maxChars: options.maxChars,
 		mapTool: mapToolCall,
 	});
@@ -217,13 +218,21 @@ function parseSession(raw: string, located: LocatedSession): ClaudeTranscript {
 }
 
 /**
- * Fill the identity fields the parser could not read from the file itself. Nothing is invented:
- * the fallbacks come from the located file, which is where the id and path came from.
+ * Pin the identity of what was imported to the located file, and fill the path the parser could
+ * not read. Nothing is invented: the id is the file name the user's spec resolved to, and the
+ * path is the file that was read.
+ *
+ * The session id deliberately comes from the located file rather than from the entries. A copied
+ * or forked session file keeps the entries of the conversation it came from, so `sessionId` inside
+ * the JSONL can name a different id than the file; DP10 keys idempotency on the located id, and a
+ * key that disagrees with the `details` recorded in the pi session re-imports the same history on
+ * every run (finding 4). One id, used for `hasInjected`, `details`, the result, the rendered
+ * header and the boundary notice, is the only way both sides can never mismatch.
  */
 function normalizeMeta(meta: ClaudeSessionMeta, located: LocatedSession): ClaudeSessionMeta {
 	return {
 		...meta,
-		sessionId: nonEmpty(meta.sessionId) ?? located.sessionId,
+		sessionId: located.sessionId,
 		path: nonEmpty(meta.path) ?? located.path,
 	};
 }
