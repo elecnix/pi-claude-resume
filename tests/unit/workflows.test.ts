@@ -128,10 +128,17 @@ describe("ci.yml", () => {
 		expect(childValue(testJob, "timeout-minutes")).toBe("15");
 	});
 
-	it("pins Node 22 and enables the npm cache without a lockfile", () => {
-		expect(ci).toMatch(/^\s*- uses: actions\/checkout@v4\s*$/m);
-		expect(ci).toMatch(/^\s*- uses: actions\/setup-node@v4\s*$/m);
-		const withBlock = requireBlock(ci, /^\s*with:\s*$/);
+	it("pins every action to a full commit SHA and targets Node 22", () => {
+		// A tag can move; a 40-character SHA cannot. This also keeps the job off the deprecated
+		// Node 20 action runtime, which is what the v5 lines are for.
+		expect(ci).toMatch(/^\s*- uses: actions\/checkout@[0-9a-f]{40}\s+# v5\s*$/m);
+		expect(ci).toMatch(/^\s*- uses: actions\/setup-node@[0-9a-f]{40}\s+# v5\s*$/m);
+		expect(ci).not.toMatch(/uses: actions\/[a-z-]+@v\d/);
+		// Read the block that belongs to setup-node, not the one checkout now carries for
+		// persist-credentials: both steps have a `with:` and the first one is checkout's.
+		const setupNodeAt = ci.search(/^\s*- uses: actions\/setup-node@[0-9a-f]{40}/m);
+		const afterSetupNode = setupNodeAt >= 0 ? ci.slice(setupNodeAt) : ci;
+		const withBlock = requireBlock(afterSetupNode, /^\s*with:\s*$/);
 		expect(childValue(withBlock, "node-version")).toBe("22");
 		expect(childValue(withBlock, "cache")).toBe("npm");
 		// No committed lockfile exists, so setup-node needs the manifest as its cache key input.
