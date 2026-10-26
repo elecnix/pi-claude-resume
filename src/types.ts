@@ -271,6 +271,8 @@ export interface BridgeResult {
 	chars?: number;
 	estimatedTokens?: number;
 	truncated?: boolean;
+	/** What the parser read, imported and dropped; present on a successful parse (DP9). */
+	parseStats?: ParseStats;
 	error?: { code: string; message: string };
 }
 

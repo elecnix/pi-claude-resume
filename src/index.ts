@@ -13,6 +13,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { resumeClaudeSession } from "./bridge/inject.ts";
 import { claudeProjectsRoot } from "./cli/env.ts";
 import { readClaudeFlags, registerClaudeFlags } from "./cli/flag.ts";
+import { describeParseLoss } from "./shared/diagnostics.ts";
 import { TRANSCRIPT_CUSTOM_TYPE, type BridgeHost, type BridgeResult } from "./types.ts";
 
 /** Key used for the footer status line set on a successful import. */
@@ -105,12 +106,15 @@ function summarize(result: BridgeResult): string {
 	return `resumed ${result.sessionId ?? "Claude session"} (${messages}${truncated})`;
 }
 
-/** Info notification for a successful import (DP8, DP9: truncation is never silent). */
+/** Info notification for a successful import (DP8, DP9: truncation and parse loss are never silent). */
 function describeImported(result: BridgeResult): string {
 	const parts = [`Imported ${summarize(result)}`];
 	if (typeof result.turns === "number") parts.push(`${result.turns} turns`);
 	if (typeof result.chars === "number") parts.push(`${result.chars} chars`);
 	if (result.truncated) parts.push("transcript truncated to fit the budget");
+	// Counted parse losses are named in the same breath as the success, so a half-parsed file is
+	// never reported as a clean import (DP9). Nothing is added when the parse was lossless.
+	if (result.parseStats !== undefined) parts.push(...describeParseLoss(result.parseStats));
 	return parts.join("; ");
 }
 

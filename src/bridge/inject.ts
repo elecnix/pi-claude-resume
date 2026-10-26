@@ -22,6 +22,7 @@ import { locateClaudeSession } from "../claude/locate.ts";
 import { parseClaudeSession } from "../claude/parse.ts";
 import { renderTranscript } from "../claude/render.ts";
 import { mapToolCall } from "../claude/toolmap.ts";
+import { describeParseLoss } from "../shared/diagnostics.ts";
 import {
 	BOUNDARY_CUSTOM_TYPE,
 	TRANSCRIPT_CUSTOM_TYPE,
@@ -141,6 +142,9 @@ async function runBridge(host: BridgeHost, options: BridgeOptions): Promise<Brid
 				chars: rendered.chars,
 				truncated: rendered.truncated,
 				droppedTurns: rendered.droppedTurns,
+				// The parse counters travel with the transcript so a later reader can audit what the
+				// import dropped instead of trusting a summary (DP9: never silent).
+				parseStats: transcript.stats,
 			},
 		},
 		0,
@@ -168,6 +172,7 @@ async function runBridge(host: BridgeHost, options: BridgeOptions): Promise<Brid
 		chars: rendered.chars,
 		estimatedTokens: rendered.estimatedTokens,
 		truncated: rendered.truncated,
+		parseStats: transcript.stats,
 		messagesSent: 2,
 	};
 }
@@ -272,6 +277,8 @@ function summaryMessage(
 		`${rendered.chars} chars (~${rendered.estimatedTokens} tokens)`,
 		describeTruncation(rendered),
 	];
+	// A half-parsed file must not be announced as a clean import (DP9, DP11).
+	words.push(...describeParseLoss(transcript.stats));
 	return words.join(" · ");
 }
 

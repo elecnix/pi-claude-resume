@@ -417,6 +417,43 @@ describe("outcome reporting", () => {
 		expect(notified[0]?.message).toContain("truncated");
 	});
 
+	it("names counted parse losses in the success notification (DP9)", async () => {
+		resumeMock.mockResolvedValue(
+			okResult({
+				parseStats: {
+					rawLines: 20,
+					parsedEntries: 4,
+					malformedLines: 3,
+					skippedEntries: 12,
+					droppedSidechains: 0,
+					droppedMeta: 0,
+					droppedApiErrors: 0,
+				},
+			}),
+		);
+		const { pi, invoke } = createPi({ flags: { [FLAG_CLAUDE]: "latest" } });
+		const { ctx, notified } = createCtx({ mode: "tui" });
+		piClaudeResume(pi);
+
+		await invoke(ctx);
+
+		// A half-parsed session must not be announced as a clean import: the counts are part of
+		// the success notification, in the same place as the truncation report.
+		expect(notified[0]?.message).toContain("3 lines could not be parsed");
+		expect(notified[0]?.message).toContain("12 bookkeeping entries skipped");
+	});
+
+	it("says nothing about parse loss when the parser reported no counters", async () => {
+		const { pi, invoke } = createPi({ flags: { [FLAG_CLAUDE]: "latest" } });
+		const { ctx, notified } = createCtx({ mode: "tui" });
+		piClaudeResume(pi);
+
+		await invoke(ctx);
+
+		expect(notified[0]?.message).not.toContain("could not be parsed");
+		expect(notified[0]?.message).not.toContain("skipped");
+	});
+
 	it("notifies without footer status in print mode", async () => {
 		const { pi, invoke } = createPi({ flags: { [FLAG_CLAUDE]: "latest" } });
 		const { ctx, notified, statuses } = createCtx({ mode: "print" });

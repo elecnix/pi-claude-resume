@@ -468,6 +468,7 @@ describe("resumeClaudeSession — successful injection", () => {
 
 		await resumeClaudeSession(host, { spec: SESSION_ID });
 
+		const transcript = syntheticTranscript();
 		const [transcriptMessage] = expectTwoMessages(sent);
 		expect(transcriptMessage.details).toEqual({
 			sessionId: SESSION_ID,
@@ -475,14 +476,64 @@ describe("resumeClaudeSession — successful injection", () => {
 			chars: 120,
 			truncated: false,
 			droppedTurns: 0,
+			// The parser's counters travel with the message so a later reader can audit the
+			// import instead of trusting a summary (DP9, finding 2).
+			parseStats: transcript.stats,
 		});
 		expect(Object.keys(transcriptMessage.details as Record<string, unknown>).sort()).toEqual([
 			"chars",
 			"droppedTurns",
+			"parseStats",
 			"sessionId",
 			"sessionPath",
 			"truncated",
 		]);
+	});
+
+	it("carries the parse counts into the details and the result, and names them in the notification", async () => {
+		const lossy = syntheticTranscript();
+		lossy.stats = {
+			rawLines: 20,
+			parsedEntries: 4,
+			malformedLines: 3,
+			skippedEntries: 12,
+			droppedSidechains: 1,
+			droppedMeta: 0,
+			droppedApiErrors: 0,
+		};
+		await arrangeSession(FIXTURE_RAW, lossy);
+		const { host, sent, notifications } = createHost();
+
+		const result = await resumeClaudeSession(host, { spec: SESSION_ID });
+
+		const [transcriptMessage] = expectTwoMessages(sent);
+		expect(transcriptMessage.details).toMatchObject({ parseStats: lossy.stats });
+		expect(result.parseStats).toEqual(lossy.stats);
+		// A half-parsed session must not read as a clean import (DP9): the counts appear in the
+		// summary in words a user can act on, next to the truncation report, not instead of it.
+		expect(notifications[0]?.message).toContain("3 lines could not be parsed");
+		expect(notifications[0]?.message).toContain("12 bookkeeping entries skipped");
+		expect(notifications[0]?.message).toContain("1 sub-agent entry skipped");
+	});
+
+	it("does not claim a loss when the parse dropped nothing but bookkeeping", async () => {
+		const clean = syntheticTranscript();
+		clean.stats = {
+			rawLines: 4,
+			parsedEntries: 4,
+			malformedLines: 0,
+			skippedEntries: 0,
+			droppedSidechains: 0,
+			droppedMeta: 0,
+			droppedApiErrors: 0,
+		};
+		await arrangeSession(FIXTURE_RAW, clean);
+		const { host, notifications } = createHost();
+
+		await resumeClaudeSession(host, { spec: SESSION_ID });
+
+		expect(notifications[0]?.message).not.toContain("could not be parsed");
+		expect(notifications[0]?.message).not.toContain("skipped");
 	});
 
 	it("reports the truncation the renderer applied", async () => {
