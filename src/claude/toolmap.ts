@@ -2,26 +2,363 @@
  * Claude Code tool names and argument shapes -> pi tool names and argument shapes (DP7, DR4).
  *
  * The tables are data. An unmapped tool degrades to a declared placeholder, never to a
- * plausible-looking lie and never to an exception.
+ * plausible-looking lie and never to an exception. Commands generated for `Grep`, `Glob` and
+ * `LS` are inert text handed to pi's `bash` tool; this module never executes anything.
+ *
+ * Nothing here touches the filesystem, the clock, the network or pi (DP3).
  */
 import type { ToolMapper, ToolMapping } from "../types.ts";
 
-/** Claude tool name -> pi tool name. */
-export const CLAUDE_TO_PI_TOOL: Readonly<Record<string, string>> = {};
-
-/** Claude tool name -> { claude argument key: pi argument key }. */
-export const CLAUDE_ARG_KEY_MAP: Readonly<Record<string, Readonly<Record<string, string>>>> = {};
-
-/** Argument keys that only make sense inside Claude Code, dropped on the way in. */
-export const DROPPED_ARG_KEYS: ReadonlySet<string> = new Set<string>();
-
 /** pi's built-in tool names, used when the runtime list is unavailable. */
-export const PI_CORE_TOOLS: readonly string[] = [];
+export const PI_CORE_TOOLS: readonly string[] = [
+	"read",
+	"bash",
+	"edit",
+	"write",
+	"grep",
+	"find",
+	"ls",
+	"questionnaire",
+];
 
 /** Tool name used when a Claude tool has no pi equivalent. */
 export const PLACEHOLDER_TOOL = "bash";
 
-/** Map one Claude tool call. Never throws. */
+/** Claude tool name -> pi tool name. */
+export const CLAUDE_TO_PI_TOOL: Readonly<Record<string, string>> = {
+	Bash: "bash",
+	BashOutput: "bash",
+	Read: "read",
+	Write: "write",
+	Edit: "edit",
+	MultiEdit: "edit",
+	NotebookEdit: "edit",
+	Grep: "bash",
+	Glob: "bash",
+	LS: "bash",
+	Task: "subagent",
+	Agent: "subagent",
+	SendMessage: "intercom",
+	TodoWrite: "bash",
+	KillShell: "bash",
+};
+
+/** Claude tool name -> { claude argument key: pi argument key }. */
+export const CLAUDE_ARG_KEY_MAP: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+	Bash: {},
+	Read: { file_path: "path" },
+	Write: { file_path: "path" },
+};
+
+/** Argument keys that only make sense inside Claude Code, dropped on the way in. */
+export const DROPPED_ARG_KEYS: ReadonlySet<string> = new Set<string>([
+	"description",
+	"explanation",
+	"summary",
+	"header",
+	"replace_all",
+	"danger_mode",
+	"enable_auto_approve",
+	"output_mode",
+	"run_in_background",
+]);
+
+/**
+ * Claude tools that are bookkeeping rather than actions: there is no faithful pi call, so they
+ * are rendered as a declared, inert placeholder instead of a plausible-looking shell command.
+ */
+export const BOOKKEEPING_TOOLS: ReadonlySet<string> = new Set<string>([
+	"TodoWrite",
+	"BashOutput",
+	"KillShell",
+]);
+
+/** Argument keys a table-driven tool cannot work without; a missing one is reported, not invented. */
+const REQUIRED_ARG_KEYS: Readonly<Record<string, readonly string[]>> = {
+	Bash: ["command"],
+	Read: ["file_path"],
+	Write: ["file_path", "content"],
+};
+
+type Args = Record<string, unknown>;
+interface Built {
+	input: Args;
+	notes: string[];
+}
+
+/** Argument keys consumed by a dedicated shape builder, so they never leak through verbatim. */
+const EDIT_CONSUMED: ReadonlySet<string> = new Set(["file_path", "old_string", "new_string"]);
+const MULTI_EDIT_CONSUMED: ReadonlySet<string> = new Set(["file_path", "edits"]);
+const NOTEBOOK_EDIT_CONSUMED: ReadonlySet<string> = new Set([
+	"notebook_path",
+	"file_path",
+	"cell_id",
+	"new_source",
+	"edit_mode",
+	"cell_type",
+]);
+const TASK_CONSUMED: ReadonlySet<string> = new Set(["subagent_type", "prompt"]);
+const SEND_MESSAGE_CONSUMED: ReadonlySet<string> = new Set(["to", "message"]);
+
+const LINE_BREAKS = /\r\n|[\r\n\u2028\u2029]/g;
+
+/** Collapse line breaks so a quoted value can never split an inert command in two. */
+const collapseLineBreaks = (value: string): string => value.replace(LINE_BREAKS, " ");
+
+/**
+ * Quote one value for a POSIX shell: always single-quoted, with embedded single quotes closed,
+ * escaped and reopened (`'"'"'`). Backticks, `$`, `;`, `&`, `|` and newlines lose all meaning.
+ */
+export function quoteForShell(value: string): string {
+	return `'${collapseLineBreaks(value).replaceAll("'", `'"'"'`)}'`;
+}
+
+/** Define an own enumerable property without tripping the `__proto__` setter. */
+const setArg = (target: Args, key: string, value: unknown): void => {
+	Object.defineProperty(target, key, { value, enumerable: true, writable: true, configurable: true });
+};
+
+const isArgs = (value: unknown): value is Args =>
+	typeof value === "object" && value !== null && !Array.isArray(value);
+
+const hasText = (value: unknown): value is string => typeof value === "string" && value.length > 0;
+
+/** Copy the keys a builder did not interpret; a computed pi key always wins over a passthrough one. */
+const copyExtras = (input: Args, args: Args, consumed: ReadonlySet<string>): void => {
+	for (const [key, value] of Object.entries(args)) {
+		if (consumed.has(key) || DROPPED_ARG_KEYS.has(key)) continue;
+		if (Object.hasOwn(input, key)) continue;
+		setArg(input, key, value);
+	}
+};
+
+/** A single-line, inert command that names the tool it stands in for. Never runs anything. */
+const inertCommand = (claudeName: string): string =>
+	`: ${quoteForShell(`${hasText(claudeName) ? claudeName : "(unnamed tool)"} was not representable as a pi tool call`)}`;
+
+function placeholderMapping(claudeName: string, notes: string[]): ToolMapping {
+	return {
+		piName: PLACEHOLDER_TOOL,
+		input: { command: inertCommand(claudeName) },
+		notes,
+	};
+}
+
+// ---------------------------------------------------------------------------
+// Dedicated shape builders: Claude argument shapes that are not a key-for-key rename
+// ---------------------------------------------------------------------------
+
+function buildEdit(args: Args): Built {
+	const input: Args = {};
+	const notes: string[] = [];
+
+	if (hasText(args.file_path)) setArg(input, "path", args.file_path);
+	else notes.push("Edit arguments carried no file_path, so the pi edit call has no path.");
+
+	const oldText = args.old_string;
+	const newText = args.new_string;
+	if (typeof oldText === "string" && typeof newText === "string") {
+		setArg(input, "edits", [{ oldText, newText }]);
+	} else {
+		notes.push("Edit carried no usable old_string/new_string pair, so the replacement was not carried over.");
+	}
+
+	if (args.replace_all === true) {
+		notes.push("Edit's replace_all flag has no pi equivalent and was dropped.");
+	}
+
+	copyExtras(input, args, EDIT_CONSUMED);
+	return { input, notes };
+}
+
+function buildMultiEdit(args: Args): Built {
+	const input: Args = {};
+	const notes: string[] = [];
+
+	if (hasText(args.file_path)) setArg(input, "path", args.file_path);
+	else notes.push("MultiEdit arguments carried no file_path, so the pi edit call has no path.");
+
+	const rawEdits = args.edits;
+	if (Array.isArray(rawEdits)) {
+		const edits: Args[] = [];
+		let skipped = 0;
+		for (const entry of rawEdits) {
+			if (!isArgs(entry)) {
+				skipped += 1;
+				continue;
+			}
+			const oldText = entry.old_string;
+			const newText = entry.new_string;
+			if (typeof oldText === "string" && typeof newText === "string") edits.push({ oldText, newText });
+			else skipped += 1;
+		}
+		if (edits.length > 0) setArg(input, "edits", edits);
+		if (skipped > 0) {
+			notes.push(`MultiEdit carried ${skipped} edit(s) without an old_string/new_string pair; they were not carried over.`);
+		}
+		if (rawEdits.length === 0) notes.push("MultiEdit carried an empty edits array.");
+	} else {
+		notes.push("MultiEdit arguments carried no edits array, so no replacements were carried over.");
+	}
+
+	copyExtras(input, args, MULTI_EDIT_CONSUMED);
+	return { input, notes };
+}
+
+function buildNotebookEdit(args: Args): Built {
+	const input: Args = {};
+	const notes: string[] = [];
+
+	const path = hasText(args.notebook_path) ? args.notebook_path : args.file_path;
+	if (hasText(path)) setArg(input, "path", path);
+	else notes.push("NotebookEdit arguments carried no notebook_path, so the pi edit call has no path.");
+
+	notes.push("NotebookEdit changes one notebook cell; pi has no notebook cell model, so only the notebook path was carried over.");
+
+	copyExtras(input, args, NOTEBOOK_EDIT_CONSUMED);
+	return { input, notes };
+}
+
+function buildGrep(args: Args): Built {
+	const notes: string[] = [];
+	const parts: string[] = ["rg", "-n"];
+
+	if (args["-i"] === true) parts.push("-i");
+	if (hasText(args.glob)) parts.push("-g", quoteForShell(args.glob));
+
+	if (hasText(args.pattern)) {
+		parts.push("--", quoteForShell(args.pattern));
+		if (hasText(args.path)) parts.push(quoteForShell(args.path));
+	} else {
+		notes.push("Grep arguments carried no pattern, so the generated rg command cannot run.");
+	}
+
+	const outputMode = args.output_mode;
+	if (typeof outputMode === "string" && outputMode !== "content") {
+		notes.push(`Grep's output_mode "${outputMode}" was not translated; the generated command prints matching lines.`);
+	}
+
+	return { input: { command: parts.join(" ") }, notes };
+}
+
+function buildGlob(args: Args): Built {
+	const notes: string[] = [];
+	const parts: string[] = ["rg", "--files"];
+
+	if (hasText(args.pattern)) parts.push("-g", quoteForShell(args.pattern));
+	else notes.push("Glob arguments carried no pattern, so the generated rg command cannot run.");
+	if (hasText(args.path)) parts.push(quoteForShell(args.path));
+
+	return { input: { command: parts.join(" ") }, notes };
+}
+
+function buildLs(args: Args): Built {
+	const parts: string[] = ["ls", "-la"];
+	if (hasText(args.path)) parts.push(quoteForShell(args.path));
+	return { input: { command: parts.join(" ") }, notes: [] };
+}
+
+function buildTask(args: Args): Built {
+	const input: Args = {};
+	const notes: string[] = [];
+
+	if (hasText(args.subagent_type)) setArg(input, "agent", args.subagent_type);
+	if (hasText(args.prompt)) setArg(input, "task", args.prompt);
+	else notes.push("Task arguments carried no prompt, so the pi task was left empty rather than invented.");
+
+	copyExtras(input, args, TASK_CONSUMED);
+	return { input, notes };
+}
+
+function buildSendMessage(args: Args): Built {
+	const input: Args = { action: "send" };
+	const notes: string[] = [];
+
+	if (hasText(args.to)) setArg(input, "to", args.to);
+	else notes.push("SendMessage arguments carried no recipient, so the intercom call has no destination.");
+	if (hasText(args.message)) setArg(input, "message", args.message);
+	else notes.push("SendMessage arguments carried no message body, so the intercom call has nothing to send.");
+
+	copyExtras(input, args, SEND_MESSAGE_CONSUMED);
+	return { input, notes };
+}
+
+const SHAPE_BUILDERS: Readonly<Record<string, (args: Args) => Built>> = {
+	Edit: buildEdit,
+	MultiEdit: buildMultiEdit,
+	NotebookEdit: buildNotebookEdit,
+	Grep: buildGrep,
+	Glob: buildGlob,
+	LS: buildLs,
+	Task: buildTask,
+	Agent: buildTask,
+	SendMessage: buildSendMessage,
+};
+
+function buildFromTables(claudeName: string, args: Args): Built {
+	const keyMap = CLAUDE_ARG_KEY_MAP[claudeName] ?? {};
+	const input: Args = {};
+	const notes: string[] = [];
+
+	for (const [key, value] of Object.entries(args)) {
+		if (DROPPED_ARG_KEYS.has(key)) continue;
+		setArg(input, keyMap[key] ?? key, value);
+	}
+
+	for (const required of REQUIRED_ARG_KEYS[claudeName] ?? []) {
+		const piKey = keyMap[required] ?? required;
+		if (input[piKey] === undefined) {
+			notes.push(`${claudeName} arguments carried no ${required}, so the pi ${claudeName} call is incomplete.`);
+		}
+	}
+
+	return { input, notes };
+}
+
+function mapToolCallUnguarded(claudeName: unknown, input: unknown): ToolMapping {
+	const name = typeof claudeName === "string" ? claudeName : String(claudeName ?? "");
+	const label = hasText(name) ? name : "(unnamed tool)";
+	// Own properties only: `constructor`, `toString` and friends must not resolve through the prototype.
+	const mapped = Object.hasOwn(CLAUDE_TO_PI_TOOL, name) ? CLAUDE_TO_PI_TOOL[name] : undefined;
+	const known = mapped !== undefined;
+	const piName = mapped ?? PLACEHOLDER_TOOL;
+	const notes: string[] = [];
+
+	if (!known) {
+		notes.push(`Claude tool "${label}" has no pi equivalent; it was rendered as a declared, inert bash placeholder.`);
+	}
+
+	// A call with no argument object keeps its pi name but carries nothing: nothing is invented.
+	if (!isArgs(input)) {
+		notes.push(`${label} arguments were not an object, so no arguments were carried over.`);
+		return { piName, input: {}, notes };
+	}
+
+	if (!known) return placeholderMapping(name, notes);
+
+	if (BOOKKEEPING_TOOLS.has(name)) {
+		return placeholderMapping(name, [
+			`${label} is Claude Code bookkeeping with no pi equivalent; it was rendered as a declared, inert bash placeholder.`,
+		]);
+	}
+
+	const builder = SHAPE_BUILDERS[name];
+	if (builder) {
+		const built = builder(input);
+		return { piName, input: built.input, notes: built.notes };
+	}
+
+	const built = buildFromTables(name, input);
+	return { piName, input: built.input, notes: built.notes };
+}
+
+/** Map one Claude tool call. Never throws (DP7, DR4). */
 export const mapToolCall: ToolMapper = (claudeName: string, input: unknown): ToolMapping => {
-	throw new Error("not implemented: mapToolCall");
+	try {
+		return mapToolCallUnguarded(claudeName, input);
+	} catch {
+		return placeholderMapping("(unknown tool)", [
+			"Tool mapping raised an unexpected error, so the call was rendered as a declared placeholder.",
+		]);
+	}
 };
