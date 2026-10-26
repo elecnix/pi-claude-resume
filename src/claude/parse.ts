@@ -111,19 +111,8 @@ function arrayText(content: readonly unknown[], separator: string): string {
 	return parts.join(separator);
 }
 
-/** Text of a `tool_result` payload, which is either a string or an array of text blocks. */
+/** Text of a `tool_result` payload or a message content field: a string or an array of text blocks. */
 function toolResultText(content: unknown): string {
-	if (typeof content === "string") {
-		return content.trim();
-	}
-	if (Array.isArray(content)) {
-		return arrayText(content, "\n");
-	}
-	return "";
-}
-
-/** Text of a message content field, for the entries that use one as a payload. */
-function contentText(content: unknown): string {
 	if (typeof content === "string") {
 		return content.trim();
 	}
@@ -250,7 +239,7 @@ function turnsForEntry(entry: ClaudeRawEntry, timestamp: string | undefined): Cl
 				return [];
 			}
 			const text =
-				contentText(entry.content) || contentText(asMessage(entry.message)?.content);
+				toolResultText(entry.content) || toolResultText(asMessage(entry.message)?.content);
 			return text === "" ? [] : [withTimestamp({ kind: "summary" as const, text }, timestamp)];
 		}
 		default:

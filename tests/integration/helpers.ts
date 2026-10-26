@@ -68,45 +68,33 @@ export interface FixtureSession {
 	readonly mtimeSeconds: number;
 }
 
+/**
+ * Build one fixture, deriving the session id from the file name so the two cannot disagree, and
+ * the epoch-seconds mtime from the ISO instant the fixture states.
+ */
+function fixture(fileName: string, fact: string | null, mtimeIso: string): FixtureSession {
+	return {
+		fileName,
+		sessionId: fileName.replace(/\.jsonl$/, ""),
+		fact,
+		mtimeSeconds: Date.parse(mtimeIso) / 1000,
+	};
+}
+
 /** Four turns; carries the codeword used by the resume tests. Newest fixture, so `latest` = this. */
-export const LONG_SESSION: FixtureSession = {
-	fileName: "4f8c2b1a-9d3e-4c57-8a02-6b1e5d9f0c34.jsonl",
-	sessionId: "4f8c2b1a-9d3e-4c57-8a02-6b1e5d9f0c34",
-	fact: "ZEPHYRQUARTZ4711",
-	mtimeSeconds: Date.parse("2025-03-04T09:02:25.000Z") / 1000,
-};
+export const LONG_SESSION: FixtureSession = fixture("4f8c2b1a-9d3e-4c57-8a02-6b1e5d9f0c34.jsonl", "ZEPHYRQUARTZ4711", "2025-03-04T09:02:25.000Z");
 
 /** Exactly one user turn. */
-export const ONE_TURN_SESSION: FixtureSession = {
-	fileName: "8b1e4d72-6c2a-4f09-b3d8-5a7e0c1b9f26.jsonl",
-	sessionId: "8b1e4d72-6c2a-4f09-b3d8-5a7e0c1b9f26",
-	fact: "amber-otter-42",
-	mtimeSeconds: Date.parse("2025-02-10T14:30:00.000Z") / 1000,
-};
+export const ONE_TURN_SESSION: FixtureSession = fixture("8b1e4d72-6c2a-4f09-b3d8-5a7e0c1b9f26.jsonl", "amber-otter-42", "2025-02-10T14:30:00.000Z");
 
 /** A `tool_use` / `tool_result` pair whose tool output carries the codeword (DP6, DP7). */
-export const TOOL_SESSION: FixtureSession = {
-	fileName: "c3d9a6f4-2e7b-4a18-9c05-1f8d4b2e6a70.jsonl",
-	sessionId: "c3d9a6f4-2e7b-4a18-9c05-1f8d4b2e6a70",
-	fact: "cobalt-lantern-77",
-	mtimeSeconds: Date.parse("2025-02-20T11:05:24.000Z") / 1000,
-};
+export const TOOL_SESSION: FixtureSession = fixture("c3d9a6f4-2e7b-4a18-9c05-1f8d4b2e6a70.jsonl", "cobalt-lantern-77", "2025-02-20T11:05:24.000Z");
 
 /** Zero-byte session file: nothing to resume, so the run must fail loudly (DP11). */
-export const EMPTY_SESSION: FixtureSession = {
-	fileName: "d5a0c8e2-7b1f-4d63-8e94-2c6a0b3f5d18.jsonl",
-	sessionId: "d5a0c8e2-7b1f-4d63-8e94-2c6a0b3f5d18",
-	fact: null,
-	mtimeSeconds: Date.parse("2025-01-01T00:00:00.000Z") / 1000,
-};
+export const EMPTY_SESSION: FixtureSession = fixture("d5a0c8e2-7b1f-4d63-8e94-2c6a0b3f5d18.jsonl", null, "2025-01-01T00:00:00.000Z");
 
 /** One truncated (malformed) line between valid turns; parsing tolerates it (DP11). */
-export const MALFORMED_SESSION: FixtureSession = {
-	fileName: "e9b3f1c7-4a8d-4e26-b0f5-7d2c9a1e6b43.jsonl",
-	sessionId: "e9b3f1c7-4a8d-4e26-b0f5-7d2c9a1e6b43",
-	fact: "silver-orchid-19",
-	mtimeSeconds: Date.parse("2025-02-01T08:15:31.000Z") / 1000,
-};
+export const MALFORMED_SESSION: FixtureSession = fixture("e9b3f1c7-4a8d-4e26-b0f5-7d2c9a1e6b43.jsonl", "silver-orchid-19", "2025-02-01T08:15:31.000Z");
 
 /** Every fixture, oldest first. */
 export const FIXTURES: readonly FixtureSession[] = [
