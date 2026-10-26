@@ -10,6 +10,7 @@
  */
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { resumeClaudeSession } from "./bridge/inject.ts";
+import { claudeProjectsRoot } from "./cli/env.ts";
 import { readClaudeFlags, registerClaudeFlags } from "./cli/flag.ts";
 import { TRANSCRIPT_CUSTOM_TYPE, type BridgeHost, type BridgeResult } from "./types.ts";
 
@@ -26,6 +27,9 @@ export default function piClaudeResume(pi: ExtensionAPI): void {
 
 		const host: BridgeHost = {
 			cwd: ctx.cwd,
+			// Claude Code's own config root, when it has been relocated with CLAUDE_CONFIG_DIR;
+			// undefined leaves locate() on its `<home>/.claude/projects` default (DP4).
+			projectsRoot: claudeProjectsRoot(),
 			piTools: pi.getActiveTools(),
 			hasInjected: (sessionId) => hasInjectedTranscript(ctx, sessionId),
 			sendCustomMessage: async (message) => {
@@ -44,7 +48,7 @@ export default function piClaudeResume(pi: ExtensionAPI): void {
 			// still a failed resume, so it must be visible rather than swallowed (DP11).
 			const message = error instanceof Error ? error.message : String(error);
 			ctx.ui.notify(`Claude resume failed: ${message}`, "error");
-			if (isNonInteractive(ctx)) throw new Error(`pi-claude-resume: bridge-error: ${message}`);
+			if (isNonInteractive(ctx)) failRun(`pi-claude-resume: bridge-error: ${message}`);
 			return;
 		}
 
@@ -54,7 +58,7 @@ export default function piClaudeResume(pi: ExtensionAPI): void {
 			ctx.ui.notify(`Claude resume failed: ${message}`, "error");
 			// DP11: in `pi -p` / `--mode json` the process must exit non-zero instead of
 			// continuing as if the history had been imported.
-			if (isNonInteractive(ctx)) throw new Error(`pi-claude-resume: ${code}: ${message}`);
+			if (isNonInteractive(ctx)) failRun(`pi-claude-resume: ${code}: ${message}`);
 			return;
 		}
 
@@ -72,6 +76,21 @@ export default function piClaudeResume(pi: ExtensionAPI): void {
 /** True in the modes where pi has no interactive UI and a failure must fail the process (DP11). */
 function isNonInteractive(ctx: ExtensionContext): boolean {
 	return ctx.mode === "print" || ctx.mode === "json";
+}
+
+/**
+ * Fail a non-interactive run: put the diagnostic on stderr and make `pi` exit non-zero (DP11).
+ *
+ * Throwing alone is not enough. pi dispatches `session_start` through the extension runner,
+ * which reports a thrown handler error through its `onError` callback ("Extension error (…):
+ * …") and then carries on with the prompt, so the process would exit 0 as if the history had
+ * been imported. `process.exitCode` is the one lever an extension has over the exit status of
+ * the CLI, and pi's print mode leaves it untouched when its own run succeeds. The throw is kept
+ * so the message reaches stderr through pi's own error reporting.
+ */
+function failRun(message: string): never {
+	process.exitCode = 1;
+	throw new Error(message);
 }
 
 /** One-line footer summary, kept short because it competes for space with pi's own status. */

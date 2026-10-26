@@ -54,6 +54,8 @@ amended in the same commit, with the reason written down.
 - `src/bridge/inject.ts` — orchestration: locate, parse, render, boundary, inject.
 - `src/cli/flag.ts` — registration and parsing of `--claude`, `--claude-max-chars`,
   `--claude-force`.
+- `src/cli/env.ts` — the one module that reads the environment: `CLAUDE_CONFIG_DIR` relocates
+  the Claude store, exactly as it does for Claude Code.
 - `src/index.ts` — the extension entry point and the only module allowed to import pi.
 - `src/types.ts` — shared contracts. Read it before you change a signature; do not edit it
   casually: every module is written against it.

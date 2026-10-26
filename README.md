@@ -32,6 +32,9 @@ The project slug is the working directory with its path separators (and dots) re
 (`/home/you/code/app` becomes `-home-you-code-app`). The session id is the file name without
 the `.jsonl` extension.
 
+- If `CLAUDE_CONFIG_DIR` is set, the store is read from `$CLAUDE_CONFIG_DIR/projects` instead of
+  `~/.claude/projects` — the same variable Claude Code honours to relocate its config directory.
+
 ### Pass it to pi
 
 `--claude` accepts exactly three forms, and nothing else:

@@ -1,10 +1,16 @@
 /**
  * Harness for the opt-in end-to-end resume tests (DP13).
  *
- * Everything here is hermetic: a throwaway HOME under `os.tmpdir()`, a throwaway project
+ * Everything here is hermetic: a throwaway tree under `os.tmpdir()`, a throwaway project
  * directory, and hand-written synthetic Claude Code fixtures copied into the layout the
  * extension reads. The real `$HOME/.claude` and `~/.pi` are never read or written, and no
  * fixture contains data from a real session (DP12).
+ *
+ * The Claude store is relocated the way Claude Code itself allows — `CLAUDE_CONFIG_DIR` pointing
+ * at `<baseDir>/claude-config` — instead of redirecting `HOME`. Redirecting `HOME` used to hide
+ * pi's own model catalogue and provider credentials from the child process, which made every run
+ * fail for a harness reason rather than a product one; the child still gets a temp `HOME` so it
+ * writes nothing to the real pi session store, but the Claude fixtures live outside it.
  */
 import { execFile } from "node:child_process";
 import type { ExecFileException } from "node:child_process";
@@ -12,6 +18,7 @@ import { mkdir, mkdtemp, readdir, readFile, rm, utimes, writeFile } from "node:f
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { CLAUDE_CONFIG_DIR_ENV } from "../../src/cli/env.ts";
 
 /** `tests/integration` */
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -21,13 +28,21 @@ export const REPO_ROOT = path.resolve(HERE, "..", "..");
 export const EXTENSION_ENTRY = path.join(REPO_ROOT, "src", "index.ts");
 /** Default overall budget for one `pi` invocation; the suite's testTimeout is larger. */
 export const PI_TIMEOUT_MS = 150_000;
-/** Model used unless `PI_CLAUDE_IT_MODEL` overrides it. */
-export const DEFAULT_IT_MODEL = "ollama/deepseek-v4.1-flash:cloud";
+
+/**
+ * Model used unless `PI_CLAUDE_IT_MODEL` overrides it.
+ *
+ * Deliberately a provider pi ships in core: the child runs with a temp `HOME` and agent
+ * directory, so a provider that arrives as an extension (the local `ollama` one, for example) is
+ * not discoverable and would fail before the transcript is ever read. Any provider whose
+ * credentials are in the parent environment can be selected with `PI_CLAUDE_IT_MODEL`.
+ */
+export const DEFAULT_IT_MODEL = "openrouter/deepseek/deepseek-v4.1-flash";
 
 /**
  * Canonical fixture project directory. It is *not* the directory copied from: the harness
- * copies these files into `<home>/.claude/projects/<slug of the temp project>/`, where the
- * slug is computed exactly like `claudeProjectSlug()`. The name here only records the
+ * copies these files into `<baseDir>/claude-config/projects/<slug of the temp project>/`, where
+ * the slug is computed exactly like `claudeProjectSlug()`. The name here only records the
  * synthetic slug shape (`/tmp/project` -> `-tmp-project`).
  */
 export const FIXTURES_ROOT = path.join(HERE, "fixtures", "claude", "-tmp-project");
@@ -41,7 +56,9 @@ export const PROJECT_CWD_PLACEHOLDER = "__PROJECT_CWD__";
 
 /** One synthetic Claude Code session tracked by the harness. */
 export interface FixtureSession {
-	/** File name inside the project directory, i.e. `<sessionId>.jsonl`. */
+	/**
+	 * File name inside the project directory, i.e. `<sessionId>.jsonl`.
+	 */
 	readonly fileName: string;
 	readonly sessionId: string;
 	/** Codeword that exists only in this fixture, or null when the fixture has no turns. */
@@ -99,16 +116,20 @@ export const FIXTURES: readonly FixtureSession[] = [
 	LONG_SESSION,
 ];
 
-/** A temp HOME plus the project directory pi will run in. */
+/** A temp tree: a fake `$HOME`, the project pi runs in, and a relocated Claude store. */
 export interface FixtureHome {
 	/** Root of the temp tree; delete this to clean up everything. */
 	readonly baseDir: string;
-	/** Fake `$HOME` for the child pi process. */
+	/** Fake `$HOME` for the child pi process: nothing written here leaves the temp tree. */
 	readonly home: string;
 	/** Working directory for pi; its Claude project slug holds the fixtures. */
 	readonly projectDir: string;
-	/** `<home>/.claude/projects/<slug>` for `projectDir`. */
+	/** `<baseDir>/claude-config`, exported to the child as `CLAUDE_CONFIG_DIR`. */
+	readonly claudeConfigDir: string;
+	/** `<claudeConfigDir>/projects/<slug>` for `projectDir`. */
 	readonly claudeProjectDir: string;
+	/** `<baseDir>/sessions`, passed as `--session-dir` when a run must persist a pi session. */
+	readonly sessionsDir: string;
 	/** Id of the long fixture session; the default subject of the resume tests. */
 	readonly sessionId: string;
 	/** Codeword only present in that session's transcript. */
@@ -127,28 +148,43 @@ export function projectSlugFor(cwd: string): string {
 	return normalized.replace(/[:/\\]/g, "-");
 }
 
-/** `<home>/.claude/projects/<slug>` for a working directory. */
-export function claudeProjectDirFor(home: string, cwd: string): string {
-	return path.join(home, ".claude", "projects", projectSlugFor(cwd));
+/** `<claudeConfigDir>/projects` — the root Claude Code keeps per-project directories under. */
+export function claudeProjectsRootFor(claudeConfigDir: string): string {
+	return path.join(claudeConfigDir, "projects");
 }
 
-/** `<home>/.claude/projects/<slug>/<sessionId>.jsonl` */
-export function claudeSessionFile(home: string, cwd: string, sessionId: string): string {
-	return path.join(claudeProjectDirFor(home, cwd), `${sessionId}.jsonl`);
+/** `<claudeConfigDir>/projects/<slug>` for a working directory. */
+export function claudeProjectDirFor(claudeConfigDir: string, cwd: string): string {
+	return path.join(claudeProjectsRootFor(claudeConfigDir), projectSlugFor(cwd));
+}
+
+/** `<claudeConfigDir>/projects/<slug>/<sessionId>.jsonl` */
+export function claudeSessionFile(
+	claudeConfigDir: string,
+	cwd: string,
+	sessionId: string,
+): string {
+	return path.join(claudeProjectDirFor(claudeConfigDir, cwd), `${sessionId}.jsonl`);
 }
 
 /**
- * Build a temp HOME containing the synthetic Claude project, and return the paths the tests
- * need. Never touches the real `$HOME/.claude` or `~/.pi` (DP4, DP12).
+ * Build a temp tree containing the synthetic Claude project under a relocated
+ * `CLAUDE_CONFIG_DIR`, and return the paths the tests need. Never touches the real
+ * `$HOME/.claude` or `~/.pi` (DP4, DP12).
  */
 export async function createFixtureHome(): Promise<FixtureHome> {
 	const baseDir = await mkdtemp(path.join(tmpdir(), "pi-claude-resume-it-"));
 	const home = path.join(baseDir, "home");
 	const projectDir = path.join(baseDir, "project");
+	const claudeConfigDir = path.join(baseDir, "claude-config");
+	const sessionsDir = path.join(baseDir, "sessions");
 	await mkdir(home);
 	await mkdir(projectDir);
+	// pi creates the session directory on demand; making it here keeps the layout assertion in
+	// `harness.test.ts` about placement rather than about who created the directory.
+	await mkdir(sessionsDir);
 
-	const claudeProjectDir = claudeProjectDirFor(home, projectDir);
+	const claudeProjectDir = claudeProjectDirFor(claudeConfigDir, projectDir);
 	await mkdir(claudeProjectDir, { recursive: true });
 
 	// Escape the path for embedding inside a JSON string literal.
@@ -171,7 +207,9 @@ export async function createFixtureHome(): Promise<FixtureHome> {
 		baseDir,
 		home,
 		projectDir,
+		claudeConfigDir,
 		claudeProjectDir,
+		sessionsDir,
 		sessionId: LONG_SESSION.sessionId,
 		expectedFact: LONG_SESSION.fact,
 	};
@@ -192,11 +230,13 @@ export function piExecutable(): string {
  * Flags that keep a child pi run self-contained (DP13).
  *
  * `--no-extensions` is deliberately absent: the extension under test is what `-e` loads.
- * Each of these only narrows discovery so a run cannot depend on machine state.
+ * Each of these only narrows discovery so a run cannot depend on machine state; none selects a
+ * session, a model or a config directory.
  *
- * `--offline` is not unconditional: a fresh temp HOME has no model catalog, and pi resolves
- * `--model` against discovered providers, so an offline run can only succeed when the model is
- * known without discovery. Opt in with `PI_CLAUDE_IT_OFFLINE=1` (see {@link hermeticPiFlags}).
+ * `--offline` is opt-in rather than unconditional: a run that starts with an empty agent
+ * directory has no refreshed model catalogue, so an offline run can only succeed when the chosen
+ * model is known without discovery. Opt in with `PI_CLAUDE_IT_OFFLINE=1` (see
+ * {@link hermeticPiFlags}).
  */
 export const HERMETIC_PI_FLAGS: readonly string[] = [
 	"--thinking",
@@ -228,17 +268,36 @@ const SCRUBBED_ENV_KEYS: readonly string[] = [
 ];
 
 /**
- * Environment for a child pi run: the caller's credentials are inherited, everything that
- * selects a home or session directory is redirected into `home` (DP4, DP12).
+ * Credentials inherited from the parent environment on purpose.
+ *
+ * The suite never invents a credential and never reads pi's `auth.json`: the provider pi needs
+ * has to be exported by whoever runs the suite. These keys are therefore explicitly kept, and a
+ * test asserts they survive {@link buildChildEnv} — hermetic must not silently mean unauthenticated.
  */
-export function buildChildEnv(home: string): NodeJS.ProcessEnv {
+export const INHERITED_CREDENTIAL_ENV_KEYS: readonly string[] = [
+	"OPENROUTER_API_KEY",
+	"ANTHROPIC_API_KEY",
+	"OLLAMA_API_KEY",
+];
+
+/**
+ * Environment for a child pi run: the caller's credentials are inherited, `HOME` and pi's agent
+ * directory are redirected into the temp tree so nothing reaches the real store, and the Claude
+ * store is relocated with Claude Code's own `CLAUDE_CONFIG_DIR` rather than by moving `HOME`
+ * (DP4, DP12).
+ */
+export function buildChildEnv(fixture: FixtureHome): NodeJS.ProcessEnv {
 	const env: NodeJS.ProcessEnv = { ...process.env };
 	for (const key of SCRUBBED_ENV_KEYS) delete env[key];
-	env.HOME = home;
-	env.USERPROFILE = home;
+	env.HOME = fixture.home;
+	env.USERPROFILE = fixture.home;
 	env.PI_TELEMETRY = "0";
-	env.PI_CODING_AGENT_DIR = path.join(home, ".pi", "agent");
-	env.PI_CODING_AGENT_SESSION_DIR = piSessionRoot(home);
+	env.PI_CODING_AGENT_DIR = path.join(fixture.home, ".pi", "agent");
+	// Belt and braces: `--session-dir` is passed explicitly per run, but if a run ever forgets
+	// it, pi must still land inside the temp tree rather than in the real session store.
+	env.PI_CODING_AGENT_SESSION_DIR = fixture.sessionsDir;
+	// The variable under test: the same one Claude Code honours (see `src/cli/env.ts`).
+	env[CLAUDE_CONFIG_DIR_ENV] = fixture.claudeConfigDir;
 	env.NO_COLOR = "1";
 	env.FORCE_COLOR = "0";
 	if (isOfflineRequested()) {
@@ -249,9 +308,9 @@ export function buildChildEnv(home: string): NodeJS.ProcessEnv {
 	return env;
 }
 
-/** Where pi persists sessions for this harness (`<agent dir>/sessions`). */
-export function piSessionRoot(home: string): string {
-	return path.join(home, ".pi", "agent", "sessions");
+/** Where pi persists sessions for this harness (`<baseDir>/sessions`). */
+export function piSessionRoot(fixture: FixtureHome): string {
+	return fixture.sessionsDir;
 }
 
 /** Outcome of one `pi` invocation. */
@@ -266,24 +325,22 @@ export interface PiRunResult {
 }
 
 export interface PiRunOptions {
-	/** Fake HOME for the child. */
-	readonly home: string;
-	/** Working directory for the child (the temp project directory). */
-	readonly cwd: string;
+	/** The temp tree the run belongs to: its env, and the project directory as cwd. */
+	readonly fixture: FixtureHome;
 	/** Defaults to {@link PI_TIMEOUT_MS}. */
 	readonly timeoutMs?: number;
 }
 
 /**
- * Run `pi` once, capturing stdout/stderr. A non-zero exit is a normal result here: the tests
- * assert on it (DP11), so this never rejects.
+ * Run `pi` once in the fixture's project directory, capturing stdout/stderr. A non-zero exit is
+ * a normal result here: the tests assert on it (DP11), so this never rejects.
  */
 export async function runPi(
 	args: readonly string[],
 	options: PiRunOptions,
 ): Promise<PiRunResult> {
 	const startedAt = performance.now();
-	const env = buildChildEnv(options.home);
+	const env = buildChildEnv(options.fixture);
 	const timeoutMs = options.timeoutMs ?? PI_TIMEOUT_MS;
 
 	return await new Promise<PiRunResult>((resolve) => {
@@ -291,7 +348,7 @@ export async function runPi(
 			piExecutable(),
 			[...args],
 			{
-				cwd: options.cwd,
+				cwd: options.fixture.projectDir,
 				env,
 				timeout: timeoutMs,
 				killSignal: "SIGKILL",
@@ -340,17 +397,18 @@ export function containsIgnoreCase(haystack: string, needle: string): boolean {
 	return haystack.toLowerCase().includes(needle.toLowerCase());
 }
 
-/** One pi session JSONL file found under the temp HOME. */
+/** One pi session JSONL file found under the harness's session directory. */
 export interface PiSessionFile {
 	readonly file: string;
 	/** Parsed entries; lines that cannot be parsed are skipped (a session file may end mid-line). */
 	readonly entries: readonly Record<string, unknown>[];
 }
 
-/** Read every pi session JSONL file under the temp HOME. */
-export async function readPiSessionFiles(home: string): Promise<readonly PiSessionFile[]> {
-	const root = piSessionRoot(home);
-	const files = await listJsonlFiles(root);
+/** Read every pi session JSONL file under `<baseDir>/sessions`. */
+export async function readPiSessionFiles(
+	fixture: FixtureHome,
+): Promise<readonly PiSessionFile[]> {
+	const files = await listJsonlFiles(piSessionRoot(fixture));
 	const sessions: PiSessionFile[] = [];
 	for (const file of files) {
 		const raw = await readFile(file, "utf8");
@@ -359,10 +417,12 @@ export async function readPiSessionFiles(home: string): Promise<readonly PiSessi
 	return sessions;
 }
 
-/** Count `custom_message` entries per `customType` across every pi session in the temp HOME. */
-export async function customMessageCounts(home: string): Promise<Record<string, number>> {
+/** Count `custom_message` entries per `customType` across every pi session in the temp tree. */
+export async function customMessageCounts(
+	fixture: FixtureHome,
+): Promise<Record<string, number>> {
 	const counts: Record<string, number> = {};
-	for (const session of await readPiSessionFiles(home)) {
+	for (const session of await readPiSessionFiles(fixture)) {
 		for (const entry of session.entries) {
 			if (entry.type !== "custom_message") continue;
 			const customType = entry.customType;
@@ -373,13 +433,34 @@ export async function customMessageCounts(home: string): Promise<Record<string, 
 	return counts;
 }
 
-/** Count `custom_message` entries of one `customType` across the temp HOME. */
-export async function countCustomMessages(home: string, customType: string): Promise<number> {
-	const counts = await customMessageCounts(home);
+/** Count `custom_message` entries of one `customType` across the temp tree. */
+export async function countCustomMessages(
+	fixture: FixtureHome,
+	customType: string,
+): Promise<number> {
+	const counts = await customMessageCounts(fixture);
 	return counts[customType] ?? 0;
 }
 
-/** Parse JSONL tolerantly: blank lines, and lines that cannot be parsed, are skipped. */
+/**
+ * Every `*.jsonl` file pi wrote anywhere in the temp tree, i.e. outside the Claude store.
+ *
+ * Used to prove that a run which asks for persistence writes under `--session-dir` and that a
+ * run which passes `--no-session` writes no session at all (DP4, DP12).
+ */
+export async function listPiJsonlFiles(fixture: FixtureHome): Promise<string[]> {
+	const files = await listJsonlFiles(fixture.baseDir);
+	return files.filter((file) => !isInside(fixture.claudeConfigDir, file));
+}
+
+/** True when `file` sits inside `directory` (both absolute, symlinks not resolved). */
+export function isInside(directory: string, file: string): boolean {
+	const root = path.resolve(directory);
+	const target = path.resolve(file);
+	return target === root || target.startsWith(root + path.sep);
+}
+
+/** Parse JSONL tolerantly: blank and unparsable lines are skipped. */
 export function parseJsonlEntries(raw: string): Record<string, unknown>[] {
 	const entries: Record<string, unknown>[] = [];
 	for (const line of raw.split("\n")) {
@@ -429,15 +510,15 @@ export function integrationModel(env: NodeJS.ProcessEnv = process.env): string {
 }
 
 /**
- * Contents of every `custom_message` entry of one `customType` across the temp HOME, flattened
+ * Contents of every `custom_message` entry of one `customType` across the temp tree, flattened
  * to text. Used to prove what actually reached the persisted transcript (DP6, DP8).
  */
 export async function customMessageContents(
-	home: string,
+	fixture: FixtureHome,
 	customType: string,
 ): Promise<string[]> {
 	const contents: string[] = [];
-	for (const session of await readPiSessionFiles(home)) {
+	for (const session of await readPiSessionFiles(fixture)) {
 		for (const entry of session.entries) {
 			if (entry.type !== "custom_message" || entry.customType !== customType) continue;
 			contents.push(contentToText(entry.content));
