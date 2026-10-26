@@ -1,0 +1,33 @@
+name: review
+
+# DP15 (reviewers are part of the toolchain): Cite reviews every pull request and its findings are
+# addressed before merge, the same way a failing test is. Same shape as elecnix's other public
+# repositories, and unfiltered for the same reason as ci.yml (DP14): stacked PRs must be reviewed
+# too.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+concurrency:
+  group: cite-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      # Pinned to a full 40-character commit SHA, never a tag: a moved tag would silently change
+      # the code that runs with `pull-requests: write` and `checks: write`.
+      - name: Review this pull request with Cite
+        uses: elecnix/cite@db01467aae47c33f16ec6b404d3cdbd13ec94f12  # v0.15.1
+        # The provider is fixed to Ollama Cloud here, not selected by a repository variable: a
+        # silent provider switch changes review behaviour with no diff in this repository.
+        with:
+          model_api_key: ${{ secrets.OLLAMA_API_KEY }}
+          model_base_url: https://ollama.com/v1
+          model_id: deepseek-v4.1-flash
+          structured_output: tools

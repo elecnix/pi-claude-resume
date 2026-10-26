@@ -1,0 +1,24 @@
+name: vale
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  vale:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5
+        with:
+          persist-credentials: false
+      - uses: vale-cli/vale-action@518a9136acc6e6668ce7c00d367051e0941e87ff  # v3
+        with:
+          # Pinned to the version the configuration was validated against.
+          version: 3.20.0
+          # A spelling error in documentation is a real defect, so it blocks.
+          fail_on_error: 'true'
+          reporter: github-pr-annotations
+          files: all
