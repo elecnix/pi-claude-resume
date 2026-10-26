@@ -1,0 +1,44 @@
+{
+  "name": "pi-claude-resume",
+  "version": "0.1.0",
+  "description": "Pi extension adding --claude <session-id> to resume a Claude Code session inside the pi coding agent.",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "claude-code",
+    "session",
+    "resume",
+    "bridge"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "main": "./src/index.ts",
+  "files": [
+    "./src",
+    "./README.md",
+    "./DESIGN_PRINCIPLES.md",
+    "./LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "scripts": {
+    "test": "vitest run --dir tests/unit",
+    "test:unit": "vitest run --dir tests/unit",
+    "test:integration": "vitest run --dir tests/integration",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@types/node": "^22.10.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0"
+  }
+}
