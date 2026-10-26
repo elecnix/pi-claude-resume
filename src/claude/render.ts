@@ -181,7 +181,16 @@ function finalize(text: string, truncated: boolean, droppedTurns: number, droppe
 	};
 }
 
-/** Render the transcript. Deterministic: no clock, no randomness. */
+/**
+ * Render the transcript. Deterministic: no clock, no randomness.
+ *
+ * Budget invariant (DP9): the result is at most `maxChars` characters, with one documented
+ * exception. When even the smallest keep set — header, first turn, marker, last turn — busts the
+ * budget, the hard cap truncates the middle of that text and the omission *marker* it inserts is
+ * not charged to the budget, so the final text can be up to one marker longer than `maxChars`.
+ * `droppedChars` stays exact in that case: it counts every character removed, by the whole-turn
+ * drop and by the hard cap alike.
+ */
 export function renderTranscript(transcript: ClaudeTranscript, options: RenderOptions = {}): RenderResult {
 	const maxChars = normalizeBudget(options.maxChars, DEFAULT_MAX_TRANSCRIPT_CHARS);
 	const ctx: RenderTurnContext = {
@@ -236,11 +245,15 @@ export function renderTranscript(transcript: ClaudeTranscript, options: RenderOp
 	}
 
 	let text = assembled.text;
+	let droppedChars = assembled.droppedChars;
 	if (text.length > maxChars) {
 		// Degenerate case: even one turn at each end busts the budget. Per-payload caps bound
 		// tool traffic, but a single huge user message cannot be dropped without losing the
-		// conversation, so the hard budget wins here and that cut stays visible too.
-		text = truncateMiddle(text, maxChars).text;
+		// conversation, so the hard budget wins here and that cut stays visible too — and, like
+		// every other cut, it is counted in what the result reports (DP9).
+		const hardCap = truncateMiddle(text, maxChars);
+		text = hardCap.text;
+		droppedChars += hardCap.droppedChars;
 	}
-	return finalize(text, true, assembled.droppedTurns, assembled.droppedChars);
+	return finalize(text, true, assembled.droppedTurns, droppedChars);
 }

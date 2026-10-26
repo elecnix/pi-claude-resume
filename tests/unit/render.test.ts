@@ -303,12 +303,25 @@ describe("renderTranscript whole-text budget", () => {
 		const result = render(transcriptWith(eightTurns()), { maxChars: 193 });
 		expect(result.truncated).toBe(true);
 		expect(result.droppedTurns).toBe(6);
-		expect(result.droppedChars).toBe(318);
+		// Six whole turns (318 characters) plus the two characters the hard cap cut.
+		expect(result.droppedChars).toBe(318 + 2);
 		expect(result.text).toContain("characters omitted ...");
 		expect(result.text.length).toBeLessThanOrEqual(193 + "[... 2 characters omitted ...]".length);
 		// Both ends are still present after the safety cap.
 		expect(result.text).toContain("## User (t1)");
 		expect(result.text).toContain("## User (t8)");
+	});
+
+	it("counts the hard-cap cut in droppedChars, so the report is exact (DP9)", () => {
+		const result = render(transcriptWith(eightTurns()), { maxChars: 193 });
+		const marker = "[... 2 characters omitted ...]";
+
+		// The documented bound: the budget plus the one marker the hard cap inserts.
+		expect(result.text).toContain(marker);
+		expect(result.text.length).toBeLessThanOrEqual(193 + marker.length);
+		// Everything removed is in the count: whole turns and the hard-cap cut together.
+		expect(result.droppedChars).toBe(318 + 2);
+		expect(result.chars).toBe(result.text.length);
 	});
 
 	it("reports chars and estimatedTokens from the final text", () => {

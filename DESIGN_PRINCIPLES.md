@@ -78,8 +78,10 @@ session, read at runtime — not a hardcoded list that drifts. (See DR2.)
 A Claude session can be arbitrarily large; a model context is not. The injected transcript is
 capped (default 120 000 characters), keeping the head (the original task) and the tail (the most
 recent state) and replacing the middle with an explicit omission marker that states how much was
-dropped. Per-tool-result and per-tool-input caps apply on top. Truncation is reported in the
-result and visible in the transcript, never silent.
+dropped. Per-tool-result and per-tool-input caps apply on top. When even the smallest keep set busts the
+budget, the final text is at most the budget plus the omission marker it inserts, and that cut is
+counted in what the result reports. Truncation is reported in the result and visible in the
+transcript, never silent.
 
 ## DP10 — Idempotent and resumable
 
