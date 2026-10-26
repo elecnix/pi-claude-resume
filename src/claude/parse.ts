@@ -56,8 +56,8 @@ const SKIPPED_ENTRY_TYPES: ReadonlySet<string> = new Set([
 /**
  * `<system-reminder>` injections (tool descriptions, todo nudges, environment notes) are pi's
  * own business, not conversation: they are stripped from user text rather than imported (DP6).
- * Case-insensitive, non-greedy and dotall, because a reminder may span lines on a machine that
- * wrote it in a different case.
+ * Case-insensitive and non-greedy, with `.` matching newlines, because a reminder may span lines
+ * and may have been written in a different case.
  */
 const SYSTEM_REMINDER_PATTERN = /<system-reminder>[\s\S]*?<\/system-reminder>/gi;
 

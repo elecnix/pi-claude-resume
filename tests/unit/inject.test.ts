@@ -3,8 +3,8 @@
  *
  * The bridge composes four pure modules plus the host. Two of those modules (`locate`, `parse`)
  * are mocked here because they own the filesystem and the JSONL format; `render` and `boundary`
- * are mocked for the same reason — this file is the specification of the *order and failure
- * behaviour* of the orchestration, not of the renderer or the notice, which have their own tests.
+ * are mocked too: this file specifies the *order and failure behaviour* of the orchestration,
+ * not the renderer or the notice, which have their own tests.
  *
  * Every fixture is hand-written and synthetic (DP12): invented ids, `/work/synthetic-project`,
  * invented prose. Nothing here came from a real Claude Code session.

@@ -8,8 +8,8 @@ repository. `CLAUDE.md` is a symlink to it; edit this file, not the symlink.
 
 [DESIGN_PRINCIPLES.md](DESIGN_PRINCIPLES.md) is reviewed on every change — code, tests, docs, CI.
 Before you write anything, read it. A reviewer who cannot map your diff to these principles and
-their decision records should reject it, and a principle you violate must be either reworked or
-amended in the same commit with the reason written down.
+their decision records should reject it. A principle you violate must be either reworked or
+amended in the same commit, with the reason written down.
 
 - **DP1** — One job: resume a Claude Code session inside pi. No general converter, no daemon, no
   session browser.
@@ -57,10 +57,10 @@ amended in the same commit with the reason written down.
 - `src/index.ts` — the extension entry point and the only module allowed to import pi.
 - `src/types.ts` — shared contracts. Read it before you change a signature; do not edit it
   casually: every module is written against it.
-- `tests/unit/` — vitest specs, colocated by module, no model and no credentials.
+- `tests/unit/` — vitest specs, one per module, no model and no credentials.
 - `tests/integration/` — end-to-end `pi -p --claude …` runs against a synthetic fixture.
-- `.github/workflows/` — CI: unit tests plus typecheck on every PR (no base-branch filter) and
-  on push to `main`.
+- `.github/workflows/` — CI: unit tests, a type-check and the Vale prose check on every PR (no
+  base-branch filter), and unit tests plus a type-check again on push to `main`.
 
 Ownership rule: the pure conversion modules must not import pi (DP3). `src/index.ts` is the only
 pi-aware module, and it only registers flags, calls the bridge and reports outcomes.
@@ -73,6 +73,7 @@ npm run typecheck        # tsc --noEmit
 npm test                 # vitest run (tests/unit)
 npx vitest run tests/unit/render.test.ts        # one file
 PI_CLAUDE_IT=1 npm run test:integration         # end-to-end, needs a model
+vale --config=.vale.ini .                       # prose check, locally and on every PR
 ```
 
 Never run `npm install` to add a package. If a feature seems to need one, it belongs in another

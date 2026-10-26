@@ -343,7 +343,7 @@ export function containsIgnoreCase(haystack: string, needle: string): boolean {
 /** One pi session JSONL file found under the temp HOME. */
 export interface PiSessionFile {
 	readonly file: string;
-	/** Parsed entries; unparsable lines are skipped (a session file may end mid-line). */
+	/** Parsed entries; lines that cannot be parsed are skipped (a session file may end mid-line). */
 	readonly entries: readonly Record<string, unknown>[];
 }
 
@@ -379,7 +379,7 @@ export async function countCustomMessages(home: string, customType: string): Pro
 	return counts[customType] ?? 0;
 }
 
-/** Parse JSONL tolerantly: blank and unparsable lines are skipped. */
+/** Parse JSONL tolerantly: blank lines, and lines that cannot be parsed, are skipped. */
 export function parseJsonlEntries(raw: string): Record<string, unknown>[] {
 	const entries: Record<string, unknown>[] = [];
 	for (const line of raw.split("\n")) {

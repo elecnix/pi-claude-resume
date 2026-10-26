@@ -122,6 +122,10 @@ skips stacked PRs, so a test asserts the workflow stays unfiltered.
 way a failing test is. A review comment that contradicts these principles is answered with a
 citation to the principle it disagrees with — or with an amendment to this file.
 
+The prose is linted too: `vale --config=.vale.ini .` runs on every pull request, because a
+misspelling or a doubled word in the documentation is a defect of the same kind as a failing test,
+not a matter of taste.
+
 ## Decision records
 
 ### DR1 — Exact ids only, `latest` is explicit
@@ -137,7 +141,7 @@ sessions in the same project can differ by one character in the last few bytes o
 ### DR2 — The boundary notice is a custom message, not a rewrite of the system prompt
 
 Pi's system prompt is authoritative and is rebuilt per run by pi itself; an extension that
-appended text to it would produce a session whose prompt no longer matches the tool loadout pi
+appended text to it would produce a session whose prompt no longer matches the tools pi
 declares. A custom message at the tail of the imported history carries the same information where
 the model will definitely read it, survives compaction ordering, and is visible in the transcript
 when the user wants to audit what was injected.

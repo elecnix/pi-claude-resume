@@ -3,9 +3,9 @@
  *
  * The notice is prose the model reads, appended as a custom message at the tail of the import
  * rather than patched into pi's system prompt (DR2). It is built from plain data only — no clock,
- * no filesystem, no pi runtime (DP3) — so its wording is deterministic and assertable in unit
- * tests (DP13). It never carries a date, a path from the importing machine beyond what the caller
- * supplied, or decoration (DP12).
+ * no filesystem, no pi runtime (DP3) — so its wording is deterministic and unit tests can
+ * assert it exactly (DP13). It never carries a date, a path from the importing machine beyond
+ * what the caller supplied, or decoration (DP12).
  */
 import type { BoundaryInput, ClaudeSessionMeta, RenderResult } from "../types.ts";
 

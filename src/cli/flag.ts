@@ -2,7 +2,7 @@
  * Flag registration and value parsing for `--claude*` (DP5).
  *
  * This module never imports the pi extension types: it takes the narrowest structural shape it
- * needs (`registerFlag` / `getFlag` callables) so the parsing rules are testable without a pi
+ * needs (`registerFlag` / `getFlag` functions) so the parsing rules are testable without a pi
  * runtime (DP3, DP13).
  */
 import {
@@ -56,7 +56,7 @@ export function readClaudeFlags(getFlag: GetFlag): ClaudeFlagValues {
 /**
  * Parse and validate `--claude-max-chars`. Returns undefined for absent or invalid input.
  *
- * Invalid input is never an error: a bad budget must not stop a resume, it just leaves DP9's
+ * Invalid input is never an error: a bad budget must not stop a resume; it just leaves DP9's
  * default in place. `undefined` therefore means "no usable budget was supplied".
  */
 export function parseMaxChars(raw: boolean | string | undefined): number | undefined {

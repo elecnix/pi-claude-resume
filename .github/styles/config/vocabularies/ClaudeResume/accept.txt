@@ -1,0 +1,39 @@
+# Project vocabulary. Words listed here are accepted as spelled.
+#
+# Vale.Spelling reports every word its dictionary does not know, so this list exists to keep
+# those reports meaningful: add a term when it is deliberate, not to silence a typo or paper
+# over an awkward phrasing. It also names deliberate terms the current dictionary happens to
+# know, so a dictionary update cannot turn them into findings.
+
+pi
+pi-claude-resume
+Claude
+Claude Code
+JSONL
+UUID
+sidechain
+sidechains
+cwd
+mtime
+stderr
+stdout
+transcript
+transcripts
+toolchain
+runtime
+repo
+worktree
+npm
+Node
+README
+Vale
+vale
+Cite
+dupdelta
+subagent
+lossy
+replayable
+injectable
+transpiled
+hardcoded
+vitest

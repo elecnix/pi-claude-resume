@@ -97,9 +97,9 @@ not replayable tool-call blocks (DR3). Everything about the format is bounded by
 the design principles say so out loud rather than implying more (DP6, DP7, DP8).
 
 The boundary notice is the last injected message. It states that the transcript above came from
-Claude Code, that pi's system prompt and pi's tool list are the ones now in force, lists the
-tools pi actually has active in this session (read at runtime), and tells the model that the next
-message is yours (DP8, DR2).
+Claude Code, that pi's system prompt and pi's tool list are the ones now in force, and that the
+next message is yours; it also lists the tools pi actually has active in this session, read at
+runtime (DP8, DR2).
 
 ## Limits
 
@@ -149,6 +149,8 @@ file in the same commit. See [AGENTS.md](AGENTS.md) for agent-facing instruction
 
 - Unit tests and `tsc --noEmit` run on every pull request, against any base branch, so stacked
   PRs are checked exactly like ones against `main`; `main` is also checked on push (DP14).
+- Vale lints the prose of every Markdown file on every pull request, with the configuration in
+  `.vale.ini`; a misspelling fails the check (DP15).
 - Every pull request is reviewed by the Cite reviewer, and its findings are addressed before
   merge the same way a failing test is (DP15).
 

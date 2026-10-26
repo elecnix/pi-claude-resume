@@ -18,6 +18,7 @@ function repoFile(relativePath: string): string {
 
 const ci = repoFile(".github/workflows/ci.yml");
 const review = repoFile(".github/workflows/review.yml");
+const valeWorkflow = repoFile(".github/workflows/vale.yml");
 const dependabot = repoFile(".github/dependabot.yml");
 
 interface YamlBlock {
@@ -154,6 +155,13 @@ describe("ci.yml", () => {
 	});
 });
 
+/** `with:` block of the step whose `uses:` line contains `usesFragment`, never another step's. */
+function stepWithBlock(text: string, usesFragment: string): YamlBlock {
+	const start = text.indexOf(usesFragment);
+	if (start < 0) throw new Error(`no step uses ${usesFragment}`);
+	return requireBlock(text.slice(start), /^\s*with:\s*$/);
+}
+
 describe("review.yml", () => {
 	it("reviews every pull request, with no branches filter (DP15, DP14)", () => {
 		expect(review).toMatch(/^name:\s*review\s*$/m);
@@ -211,11 +219,57 @@ describe("review.yml", () => {
 	});
 });
 
+describe("vale.yml", () => {
+	it("lints every pull request, with no branches filter (DP14, DP15)", () => {
+		expect(valeWorkflow).toMatch(/^name:\s*vale\s*$/m);
+		const on = requireBlock(valeWorkflow, /^on:\s*$/);
+		expect(childKeys(on)).toEqual(["pull_request"]);
+		expect(requireBlock(valeWorkflow, /^\s*pull_request:\s*$/).body).toEqual([]);
+		expect(linesMatching(valeWorkflow, /^\s*branches\s*:/)).toEqual([]);
+	});
+
+	it("grants read-only contents and pull-request annotations", () => {
+		const permissions = requireBlock(valeWorkflow, /^permissions:\s*$/);
+		expect(childEntries(permissions)).toEqual([
+			{ key: "contents", value: "read" },
+			{ key: "pull-requests", value: "write" },
+		]);
+	});
+
+	it("runs a single job on ubuntu-latest", () => {
+		expect(childKeys(requireBlock(valeWorkflow, /^jobs:\s*$/))).toEqual(["vale"]);
+		expect(childValue(requireBlock(valeWorkflow, /^\s{2}vale:\s*$/), "runs-on")).toBe(
+			"ubuntu-latest",
+		);
+	});
+
+	it("pins vale-action to a full commit sha with a readable version comment", () => {
+		const usesLines = linesMatching(valeWorkflow, /^\s*(?:-\s*)?uses:\s*vale-cli\/vale-action@/);
+		expect(usesLines).toHaveLength(1);
+		const line = usesLines[0] ?? "";
+		const sha = /vale-cli\/vale-action@([0-9a-f]+)/.exec(line)?.[1] ?? "";
+		expect(sha).toMatch(/^[0-9a-f]{40}$/);
+		expect(line).toMatch(/#\s*v\d+\s*$/);
+		// Never a tag: a moved tag would change code that runs on every pull request.
+		expect(line).not.toMatch(/vale-cli\/vale-action@v/);
+	});
+
+	it("pins the validated vale version and fails on error", () => {
+		const withBlock = stepWithBlock(valeWorkflow, "vale-cli/vale-action");
+		expect(childValue(withBlock, "version")).toBe("3.20.0");
+		// A misspelling in documentation is a defect, so it blocks like a failing test (DP15).
+		expect(childValue(withBlock, "fail_on_error")).toBe("'true'");
+		expect(childValue(withBlock, "reporter")).toBe("github-pr-annotations");
+		expect(childValue(withBlock, "files")).toBe("all");
+	});
+});
+
 describe("runner choice", () => {
 	it("never asks for a self-hosted runner label", () => {
 		for (const [name, text] of [
 			["ci.yml", ci],
 			["review.yml", review],
+			["vale.yml", valeWorkflow],
 		] as const) {
 			const runners = linesMatching(text, /^\s*runs-on:/);
 			expect(runners.length, `${name} declares no runner`).toBeGreaterThan(0);

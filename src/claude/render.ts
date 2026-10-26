@@ -74,7 +74,7 @@ function renderToolInput(input: unknown, maxChars: number): { text: string; trun
 		const serialized = JSON.stringify(input === undefined ? {} : input);
 		json = serialized === undefined ? "{}" : serialized;
 	} catch {
-		// Circular or otherwise unserializable input: declare it instead of blowing up.
+		// Circular or otherwise non-serializable input: declare it instead of blowing up.
 		json = UNSUPPORTED_INPUT;
 	}
 	const text = truncatePayload(json, maxChars);

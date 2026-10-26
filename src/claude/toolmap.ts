@@ -123,7 +123,7 @@ const isArgs = (value: unknown): value is Args =>
 
 const hasText = (value: unknown): value is string => typeof value === "string" && value.length > 0;
 
-/** Copy the keys a builder did not interpret; a computed pi key always wins over a passthrough one. */
+/** Copy the keys a builder did not interpret; a computed pi key always wins over one copied through. */
 const copyExtras = (input: Args, args: Args, consumed: ReadonlySet<string>): void => {
 	for (const [key, value] of Object.entries(args)) {
 		if (consumed.has(key) || DROPPED_ARG_KEYS.has(key)) continue;

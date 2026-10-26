@@ -177,7 +177,7 @@ export type LocateResult =
 // ---------------------------------------------------------------------------
 
 export interface ToolMapping {
-	/** pi tool name, or a declared placeholder name for an unmappable call. */
+	/** pi tool name, or a declared placeholder name for a call that cannot be mapped. */
 	piName: string;
 	/** Arguments in pi's shape, best effort. */
 	input: Record<string, unknown>;

@@ -155,7 +155,7 @@ function locateById(id: string, projectsRoot: string): LocateResult {
 
 /**
  * `latest` is the one spec where "the newest session" is unambiguously what the user asked for
- * (DR1). It is scoped to the cwd's project directory; only when that directory does not exist at
+ * (DR1). It is scoped to the cwd's project directory. Only when that directory does not exist at
  * all — a cwd no Claude session has ever run in — does it widen to the whole store, because there
  * is no per-directory answer to give and the request was explicitly for the newest session. If the
  * directory exists but holds no session, that is reported as not-found rather than answered with
