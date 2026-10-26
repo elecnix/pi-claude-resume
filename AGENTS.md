@@ -56,7 +56,7 @@ amended in the same commit with the reason written down.
   `--claude-force`.
 - `src/index.ts` — the extension entry point and the only module allowed to import pi.
 - `src/types.ts` — shared contracts. Read it before you change a signature; do not edit it
-  casually, other lanes are written against it.
+  casually: every module is written against it.
 - `tests/unit/` — vitest specs, colocated by module, no model and no credentials.
 - `tests/integration/` — end-to-end `pi -p --claude …` runs against a synthetic fixture.
 - `.github/workflows/` — CI: unit tests plus typecheck on every PR (no base-branch filter) and
@@ -70,7 +70,7 @@ pi-aware module, and it only registers flags, calls the bridge and reports outco
 ```sh
 npm install              # once; do not add dependencies
 npm run typecheck        # tsc --noEmit
-npm test                 # vitest run --dir tests/unit
+npm test                 # vitest run (tests/unit)
 npx vitest run tests/unit/render.test.ts        # one file
 PI_CLAUDE_IT=1 npm run test:integration         # end-to-end, needs a model
 ```

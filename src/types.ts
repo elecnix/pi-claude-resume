@@ -46,6 +46,8 @@ export interface ClaudeRawEntry {
 	leafUuid?: string;
 	aiTitle?: string;
 	message?: ClaudeRawMessage;
+	/** Carried by `system` entries, notably a `compact_boundary` whose content is a summary. */
+	content?: string | ClaudeRawBlock[];
 	[key: string]: unknown;
 }
 
@@ -120,6 +122,7 @@ export interface ClaudeSessionMeta {
 }
 
 export interface ParseStats {
+	/** Non-blank lines read. Every well-formed entry lands in exactly one bucket below. */
 	rawLines: number;
 	parsedEntries: number;
 	malformedLines: number;
@@ -202,10 +205,14 @@ export interface RenderResult {
 	chars: number;
 	/** Approximate token count (`chars / 4`), for reporting only. */
 	estimatedTokens: number;
+	/**
+	 * True when anything was cut, including per-tool-result and per-tool-input caps — so
+	 * `droppedTurns === 0` does not mean nothing was removed.
+	 */
 	truncated: boolean;
-	/** Number of turns removed entirely from the middle by the budget. */
+	/** Number of turns removed entirely from the middle by the total budget. */
 	droppedTurns: number;
-	/** Characters dropped from the middle, for the omission marker. */
+	/** Characters removed from the middle only; per-payload cuts are not counted here. */
 	droppedChars: number;
 }
 

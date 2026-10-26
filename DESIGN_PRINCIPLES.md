@@ -62,7 +62,9 @@ tool names and argument shapes are mapped to pi's (`Bash` → `bash`, `Read` →
 `Edit` → `edit` with pi's `edits[]` array, `Grep`/`Glob` → `bash` with a real command, …).
 Where a faithful mapping is impossible the call is rendered as a declared, lossy placeholder
 that says so — never as a silently plausible call. The mapping table is data, tested one row at
-a time.
+a time. Command text the mapping generates (`Grep` → a quoted `rg` line) is inert data recorded in
+the transcript for the model to read; the extension never executes it, and a placeholder carries
+a no-op command that names the original tool.
 
 ## DP8 — Every resumed session says where it is
 
@@ -126,9 +128,11 @@ citation to the principle it disagrees with — or with an amendment to this fil
 
 Claude Code's own `--resume` takes a session id or opens a picker; it does not accept prefixes.
 Mirroring that keeps behaviour predictable, and an explicit `latest` keyword covers the one case
-where "the newest session for this directory" is genuinely what the user means. Prefix matching
-was rejected because two sessions in the same project can differ by one character in the last
-few bytes of a UUID.
+where "the newest session for this directory" is genuinely what the user means. `latest` is scoped
+to the project directory for the current working directory and widens to the whole store only when
+that directory does not exist at all; an existing but empty directory is a `not-found`, not an
+invitation to borrow another project's conversation. Prefix matching was rejected because two
+sessions in the same project can differ by one character in the last few bytes of a UUID.
 
 ### DR2 — The boundary notice is a custom message, not a rewrite of the system prompt
 

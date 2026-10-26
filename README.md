@@ -1,6 +1,6 @@
 # pi-claude-resume
 
-A [pi](https://github.com/elecnix/pi) coding-agent extension that adds `--claude <session-id>`.
+A [pi](https://pi.dev) coding-agent extension that adds `--claude <session-id>`.
 It continues a Claude Code conversation inside pi, under pi's own system prompt and pi's own
 tools: the old conversation is read from Claude Code's local session store, rendered as a
 transcript, and injected into the pi session before your first message. Claude Code keeps
@@ -28,7 +28,7 @@ Claude Code stores one JSONL file per session under a per-project directory:
 ls ~/.claude/projects/<slug>/
 ```
 
-The project slug is the working directory with every `/` replaced by `-`
+The project slug is the working directory with its path separators (and dots) replaced by `-`
 (`/home/you/code/app` becomes `-home-you-code-app`). The session id is the file name without
 the `.jsonl` extension.
 
@@ -40,7 +40,7 @@ the `.jsonl` extension.
 | --- | --- | --- |
 | Session id | `--claude <session-id>` | That exact session, no prefix matching |
 | Path | `--claude /abs/path/<session-id>.jsonl` | That exact file |
-| `latest` | `--claude latest` | The newest session for the current directory |
+| `latest` | `--claude latest` | The newest session for the current directory (widened to the whole store only when that directory has no sessions) |
 
 A partial, truncated or otherwise unknown id fails with the candidates that were found instead
 of silently resuming the "most recent" session (DP5, DR1).

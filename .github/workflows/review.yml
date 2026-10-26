@@ -29,4 +29,4 @@ jobs:
           require_parameters: ${{ vars.CITE_PROVIDER == 'openrouter' }}
           model_api_key: ${{ vars.CITE_PROVIDER == 'openrouter' && secrets.MODEL_API_KEY || secrets.OLLAMA_API_KEY }}
           model_base_url: ${{ vars.CITE_PROVIDER == 'openrouter' && 'https://openrouter.ai/api/v1' || 'https://ollama.com/v1' }}
-          model_id: ${{ vars.CITE_PROVIDER == 'openrouter' && 'deepseek/deepseek-v4-flash-0731' || 'deepseek-v4.1-flash' }}
+          model_id: ${{ vars.CITE_PROVIDER == 'openrouter' && 'deepseek/deepseek-v4.1-flash' || 'deepseek-v4.1-flash' }}
