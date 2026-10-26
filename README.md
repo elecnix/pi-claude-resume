@@ -45,8 +45,9 @@ the `.jsonl` extension.
 | Path | `--claude /abs/path/<session-id>.jsonl` | That exact file |
 | `latest` | `--claude latest` | The newest session for the current directory (widened to the whole store only when that directory has no sessions) |
 
-A partial, truncated or otherwise unknown id fails with the candidates that were found instead
-of silently resuming the "most recent" session (DP5, DR1).
+A partial, truncated or otherwise unknown id fails instead of silently resuming the "most
+recent" session. An id that exists in more than one project is reported as ambiguous, and only
+that error lists the candidate paths it found (DP5, DR1).
 
 ### Options
 
@@ -78,6 +79,7 @@ nothing is half-injected (DP11).
 | Sidechain entries (sub-agent traffic) | Dropped |
 | Meta and system-reminder injections | Dropped |
 | API-error placeholders | Dropped |
+| Attachment entries (file contents pasted into a message) | Not imported; only the text around them is |
 | Bookkeeping entries (mode, permission-mode, file-history snapshots, api-request records) | Dropped |
 
 Claude-only tools that pi does not have are not dressed up to look native: the call is rendered
