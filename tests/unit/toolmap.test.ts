@@ -318,6 +318,72 @@ describe("Grep command generation", () => {
 		expect(mapping.notes.join(" ")).toContain("files_with_matches");
 	});
 
+	it("translates -A into rg's after-context flag", () => {
+		expect(mapToolCall("Grep", { pattern: "TODO", "-A": 2 }).input.command).toBe(
+			"rg -n -A 2 -- 'TODO'",
+		);
+	});
+
+	it("translates -B into rg's before-context flag", () => {
+		expect(mapToolCall("Grep", { pattern: "TODO", "-B": 3 }).input.command).toBe(
+			"rg -n -B 3 -- 'TODO'",
+		);
+	});
+
+	it("translates -C into rg's context flag", () => {
+		expect(mapToolCall("Grep", { pattern: "TODO", "-C": 1 }).input.command).toBe(
+			"rg -n -C 1 -- 'TODO'",
+		);
+	});
+
+	it("keeps every context flag alongside -i and the glob filter", () => {
+		expect(
+			mapToolCall("Grep", { pattern: "todo", "-i": true, glob: "*.ts", "-A": 2, "-B": 1, "-C": 3 })
+				.input.command,
+		).toBe("rg -n -i -g '*.ts' -A 2 -B 1 -C 3 -- 'todo'");
+	});
+
+	it("accepts a context count written as a string, as Claude Code stores it", () => {
+		expect(mapToolCall("Grep", { pattern: "TODO", "-A": "4" }).input.command).toBe(
+			"rg -n -A 4 -- 'TODO'",
+		);
+	});
+
+	it("declares a -A value that is not a line count instead of passing it to rg", () => {
+		const mapping = mapToolCall("Grep", { pattern: "TODO", "-A": "two" });
+		expect(mapping.input.command).toBe("rg -n -- 'TODO'");
+		expect(mapping.notes.join(" ")).toContain("-A");
+		expect(mapping.notes.join(" ")).toContain("not a positive whole number");
+	});
+
+	it("translates multiline into rg's -U flag", () => {
+		expect(mapToolCall("Grep", { pattern: "^a$", multiline: true }).input.command).toBe(
+			"rg -n -U -- '^a$'",
+		);
+	});
+
+	it("does not add -U when multiline is false or absent", () => {
+		expect(mapToolCall("Grep", { pattern: "todo", multiline: false }).input.command).toBe(
+			"rg -n -- 'todo'",
+		);
+		expect(mapToolCall("Grep", { pattern: "todo" }).input.command).toBe("rg -n -- 'todo'");
+	});
+
+	it("declares head_limit instead of dropping it silently", () => {
+		const mapping = mapToolCall("Grep", { pattern: "TODO", head_limit: 25 });
+		expect(mapping.input.command).toBe("rg -n -- 'TODO'");
+		expect(mapping.notes.join(" ")).toContain("head_limit of 25");
+		expect(mapping.notes.join(" ")).toContain("prints every match");
+	});
+
+	it("names an argument it has no translation for, rather than dropping it", () => {
+		// `type` is Claude's file-type filter; the generated rg line does not carry it.
+		const mapping = mapToolCall("Grep", { pattern: "TODO", type: "ts", offset: 5 });
+		expect(mapping.input.command).toBe("rg -n -- 'TODO'");
+		expect(mapping.notes.join(" ")).toContain("type, offset");
+		expect(mapping.notes.join(" ")).toContain("not translated");
+	});
+
 	it("stays inert for a hostile pattern", () => {
 		const command = mapToolCall("Grep", { pattern: "$(rm -rf /tmp/x); `id`", path: "/tmp/synthetic" })
 			.input.command as string;
@@ -341,6 +407,26 @@ describe("Glob command generation", () => {
 		const mapping = mapToolCall("Glob", {});
 		expect(mapping.input.command).toBe("rg --files");
 		expect(mapping.notes.join(" ")).toContain("pattern");
+	});
+
+	it("declares head_limit instead of dropping it silently", () => {
+		const mapping = mapToolCall("Glob", { pattern: "**/*.ts", head_limit: 10 });
+		expect(mapping.input.command).toBe("rg --files -g '**/*.ts'");
+		expect(mapping.notes.join(" ")).toContain("head_limit");
+		expect(mapping.notes.join(" ")).toContain("lists every matching file");
+	});
+
+	it("names an argument it has no translation for, rather than dropping it", () => {
+		const mapping = mapToolCall("Glob", { pattern: "**/*.ts", type: "ts" });
+		expect(mapping.input.command).toBe("rg --files -g '**/*.ts'");
+		expect(mapping.notes.join(" ")).toContain("type");
+		expect(mapping.notes.join(" ")).toContain("not translated");
+	});
+
+	it("declares a multiline flag, which a file listing cannot honour", () => {
+		const mapping = mapToolCall("Glob", { pattern: "**/*.ts", multiline: true });
+		expect(mapping.input.command).toBe("rg --files -g '**/*.ts'");
+		expect(mapping.notes.join(" ")).toContain("multiline");
 	});
 });
 

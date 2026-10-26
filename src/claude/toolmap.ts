@@ -107,6 +107,19 @@ const NOTEBOOK_EDIT_CONSUMED: ReadonlySet<string> = new Set([
 	"cell_type",
 ]);
 const TASK_CONSUMED: ReadonlySet<string> = new Set(["subagent_type", "prompt"]);
+const GREP_CONSUMED: ReadonlySet<string> = new Set([
+	"pattern",
+	"path",
+	"glob",
+	"-i",
+	"-A",
+	"-B",
+	"-C",
+	"multiline",
+	"output_mode",
+	"head_limit",
+]);
+const GLOB_CONSUMED: ReadonlySet<string> = new Set(["pattern", "path", "head_limit", "multiline"]);
 const SEND_MESSAGE_CONSUMED: ReadonlySet<string> = new Set(["to", "message"]);
 
 const LINE_BREAKS = /\r\n|[\r\n\u2028\u2029]/g;
@@ -140,6 +153,24 @@ const copyExtras = (input: Args, args: Args, consumed: ReadonlySet<string>): voi
 		setArg(input, key, value);
 	}
 };
+
+/**
+ * Name every argument a builder did not interpret. A generated command that quietly ignores input
+ * is the silent lie DP7 forbids, and a fixed list of known-untranslatable keys would go stale the
+ * next time Claude Code adds one.
+ */
+function noteUnconsumed(
+	args: Args,
+	consumed: ReadonlySet<string>,
+	notes: string[],
+	claudeName: string,
+): void {
+	const remaining = Object.keys(args).filter((key) => !consumed.has(key));
+	if (remaining.length === 0) return;
+	notes.push(
+		`${claudeName} arguments ${remaining.join(", ")} had no counterpart in the generated command and were not translated.`,
+	);
+}
 
 /** A single-line, inert command that names the tool it stands in for. Never runs anything. */
 const inertCommand = (claudeName: string): string =>
@@ -228,12 +259,48 @@ function buildNotebookEdit(args: Args): Built {
 	return { input, notes };
 }
 
+/** A positive whole number of lines, or undefined: `-A 2` is a count, `-A two` is not. */
+function lineCount(value: unknown): number | undefined {
+	const parsed =
+		typeof value === "number"
+			? value
+			: typeof value === "string" && value.trim() !== ""
+				? Number(value.trim())
+				: Number.NaN;
+	return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+/**
+ * `-A`, `-B` and `-C` are rg's own context flags, so they carry over verbatim (DP7). A value that
+ * is not a line count is declared rather than passed on as something rg would misread.
+ */
+function addContextFlags(parts: string[], args: Args, notes: string[]): void {
+	for (const flag of ["-A", "-B", "-C"] as const) {
+		const value = args[flag];
+		if (value === undefined) continue;
+		const lines = lineCount(value);
+		if (lines === undefined) {
+			notes.push(`Grep's ${flag} value was not a positive whole number of lines, so it was not translated.`);
+			continue;
+		}
+		parts.push(flag, String(lines));
+	}
+}
+
 function buildGrep(args: Args): Built {
 	const notes: string[] = [];
 	const parts: string[] = ["rg", "-n"];
 
 	if (args["-i"] === true) parts.push("-i");
 	if (hasText(args.glob)) parts.push("-g", quoteForShell(args.glob));
+	addContextFlags(parts, args, notes);
+
+	// rg's own multiline switch; anything other than `true` means Claude did not ask for it.
+	if (args.multiline === true) {
+		parts.push("-U");
+	} else if (args.multiline !== undefined && args.multiline !== false) {
+		notes.push("Grep's multiline flag was not a boolean, so it was not translated.");
+	}
 
 	if (hasText(args.pattern)) {
 		parts.push("--", quoteForShell(args.pattern));
@@ -247,6 +314,20 @@ function buildGrep(args: Args): Built {
 		notes.push(`Grep's output_mode "${outputMode}" was not translated; the generated command prints matching lines.`);
 	}
 
+	// head_limit caps how many result lines Claude Code showed. Cutting the stream would need a
+	// shell pipeline, which would change what the recorded command means, so it is declared, not
+	// invented (DP7).
+	const headLimit = args.head_limit;
+	if (headLimit !== undefined && headLimit !== null) {
+		const lines = lineCount(headLimit);
+		notes.push(
+			lines === undefined
+				? "Grep's head_limit was not a positive whole number of lines, so it was not translated."
+				: `Grep's head_limit of ${lines} was not translated; the generated command prints every match.`,
+		);
+	}
+
+	noteUnconsumed(args, GREP_CONSUMED, notes, "Grep");
 	return { input: { command: parts.join(" ") }, notes };
 }
 
@@ -258,6 +339,16 @@ function buildGlob(args: Args): Built {
 	else notes.push("Glob arguments carried no pattern, so the generated rg command cannot run.");
 	if (hasText(args.path)) parts.push(quoteForShell(args.path));
 
+	// A file listing has nothing to truncate per match and no use for multiline patterns. If Claude
+	// Code ever sends them, the transcript says they were dropped instead of losing them silently.
+	if (args.head_limit !== undefined && args.head_limit !== null) {
+		notes.push("Glob's head_limit was not translated; the generated command lists every matching file.");
+	}
+	if (args.multiline === true) {
+		notes.push("Glob's multiline flag has no meaning when listing files, so it was not translated.");
+	}
+
+	noteUnconsumed(args, GLOB_CONSUMED, notes, "Glob");
 	return { input: { command: parts.join(" ") }, notes };
 }
 
