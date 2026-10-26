@@ -18,6 +18,7 @@ import { mkdir, mkdtemp, readdir, readFile, rm, utimes, writeFile } from "node:f
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { claudeProjectSlug } from "../../src/claude/locate.ts";
 import { CLAUDE_CONFIG_DIR_ENV } from "../../src/cli/env.ts";
 
 /** `tests/integration` */
@@ -139,13 +140,14 @@ export interface FixtureHome {
 /**
  * Claude Code's project directory name for a working directory: `/a/b` -> `-a-b`.
  *
- * Mirrors `claudeProjectSlug()` in `src/claude/locate.ts`; it is duplicated here so the harness
- * can build the layout before the extension is implemented, and the temp paths contain only
- * letters, digits, `-` and `/`, so no other escaping is involved.
+ * Delegates to the extension's own `claudeProjectSlug()` instead of re-implementing the rule. The
+ * harness used to fold separators and colons but not dots, so a project directory containing a dot
+ * produced fixtures under a slug the extension never looks at, and every resume test failed for a
+ * harness reason. `path.resolve()` first, because the harness always places an absolute directory
+ * while a caller may pass a relative one. `tests/unit/slug-mirror.test.ts` keeps the two in step.
  */
 export function projectSlugFor(cwd: string): string {
-	const normalized = path.resolve(cwd).replace(/[\\/]+$/, "");
-	return normalized.replace(/[:/\\]/g, "-");
+	return claudeProjectSlug(path.resolve(cwd));
 }
 
 /** `<claudeConfigDir>/projects` — the root Claude Code keeps per-project directories under. */
