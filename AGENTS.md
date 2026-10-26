@@ -61,8 +61,9 @@ amended in the same commit, with the reason written down.
   casually: every module is written against it.
 - `tests/unit/` — vitest specs, one per module, no model and no credentials.
 - `tests/integration/` — end-to-end `pi -p --claude …` runs against a synthetic fixture.
-- `.github/workflows/` — CI: unit tests, a type-check and the Vale prose check on every PR (no
-  base-branch filter), and unit tests plus a type-check again on push to `main`.
+- `.github/workflows/` — CI: unit tests, a type-check, the Vale prose check and the `dupdelta`
+  duplication report on every PR (no base-branch filter), and unit tests plus a type-check again
+  on push to `main`.
 
 Ownership rule: the pure conversion modules must not import pi (DP3). `src/index.ts` is the only
 pi-aware module, and it only registers flags, calls the bridge and reports outcomes.
@@ -76,6 +77,7 @@ npm test                 # vitest run (tests/unit)
 npx vitest run tests/unit/render.test.ts        # one file
 PI_CLAUDE_IT=1 npm run test:integration         # end-to-end, needs a model
 vale --config=.vale.ini .                       # prose check, locally and on every PR
+dupdelta ci --base main                         # the duplication report, if it is on PATH
 ```
 
 Never run `npm install` to add a package. If a feature seems to need one, it belongs in another

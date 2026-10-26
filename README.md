@@ -160,6 +160,9 @@ file in the same commit. See [AGENTS.md](AGENTS.md) for agent-facing instruction
   PRs are checked exactly like ones against `main`; `main` is also checked on push (DP14).
 - Vale lints the prose of every Markdown file on every pull request, with the configuration in
   `.vale.ini`; a misspelling fails the check (DP15).
+- The duplication a pull request introduces is reported by `dupdelta`, with the added code
+  annotated inline. It warns and does not fail the build: what the repository had before this
+  branch stays quiet, and only new duplication is reported (DP14).
 - Every pull request is reviewed by the Cite reviewer, and its findings are addressed before
   merge the same way a failing test is (DP15).
 

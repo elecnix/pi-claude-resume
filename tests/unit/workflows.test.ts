@@ -8,7 +8,7 @@
  * review actually sees.
  */
 
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
@@ -19,6 +19,7 @@ function repoFile(relativePath: string): string {
 const ci = repoFile(".github/workflows/ci.yml");
 const review = repoFile(".github/workflows/review.yml");
 const valeWorkflow = repoFile(".github/workflows/vale.yml");
+const dupdelta = repoFile(".github/workflows/dupdelta.yml");
 const dependabot = repoFile(".github/dependabot.yml");
 
 interface YamlBlock {
@@ -264,13 +265,100 @@ describe("vale.yml", () => {
 	});
 });
 
+describe("dupdelta.yml", () => {
+	it("reports every pull request, with no branches filter (DP14)", () => {
+		expect(dupdelta).toMatch(/^name:\s*dupdelta\s*$/m);
+		const on = requireBlock(dupdelta, /^on:\s*$/);
+		expect(childKeys(on)).toEqual(["pull_request"]);
+		expect(requireBlock(dupdelta, /^\s*pull_request:\s*$/).body).toEqual([]);
+		expect(linesMatching(dupdelta, /^\s*branches\s*:/)).toEqual([]);
+	});
+
+	it("grants contents: read and pull-requests: write for its annotations", () => {
+		const permissions = requireBlock(dupdelta, /^permissions:\s*$/);
+		expect(childEntries(permissions)).toEqual([
+			{ key: "contents", value: "read" },
+			{ key: "pull-requests", value: "write" },
+		]);
+	});
+
+	it("pins the detector to a full commit sha with a readable version comment", () => {
+		const usesLines = linesMatching(dupdelta, /^\s*(?:-\s*)?uses:\s*elecnix\/dupdelta@/);
+		expect(usesLines).toHaveLength(1);
+		const line = usesLines[0] ?? "";
+		const sha = /elecnix\/dupdelta@([0-9a-f]+)/.exec(line)?.[1] ?? "";
+		expect(sha).toMatch(/^[0-9a-f]{40}$/);
+		expect(line).toMatch(/#\s*v\d+\.\d+\.\d+\s*$/);
+		// Never a tag: a moved tag would change the code that annotates every pull request.
+		expect(line).not.toMatch(/elecnix\/dupdelta@v/);
+	});
+
+	it("pins checkout and fetches enough history to reach the merge-base", () => {
+		const usesLines = linesMatching(dupdelta, /^\s*(?:-\s*)?uses:\s*actions\/checkout@/);
+		expect(usesLines).toHaveLength(1);
+		const line = usesLines[0] ?? "";
+		expect(/actions\/checkout@([0-9a-f]+)/.exec(line)?.[1] ?? "").toMatch(/^[0-9a-f]{40}$/);
+		expect(line).toMatch(/#\s*v\d+\s*$/);
+		const withBlock = stepWithBlock(dupdelta, "actions/checkout@");
+		// The merge-base is what the action scans as "before"; a shallow clone has none.
+		expect(childValue(withBlock, "fetch-depth")).toBe("0");
+		expect(childValue(withBlock, "persist-credentials")).toBe("false");
+	});
+
+	it("runs a single job on ubuntu-latest", () => {
+		expect(childKeys(requireBlock(dupdelta, /^jobs:\s*$/))).toEqual(["dupdelta"]);
+		expect(childValue(requireBlock(dupdelta, /^\s{2}dupdelta:\s*$/), "runs-on")).toBe(
+			"ubuntu-latest",
+		);
+	});
+
+	it("installs and builds nothing: the action ships its own binary", () => {
+		// No step runs a command at all, so there is no npm, cargo or build step to go stale.
+		expect(linesMatching(dupdelta, /^\s*(?:-\s*)?run:\s*/)).toEqual([]);
+		const instructions = dupdelta
+			.split(/\r?\n/)
+			.filter((line) => !line.trim().startsWith("#"));
+		expect(instructions.join("\n")).not.toMatch(/\b(?:npm|cargo|make|build)\b/);
+	});
+
+	it("cancels superseded scans for the same pull request", () => {
+		const concurrency = requireBlock(dupdelta, /^concurrency:\s*$/);
+		expect(childValue(concurrency, "group")).toBe(
+			"dupdelta-pr-${{ github.event.pull_request.number }}",
+		);
+		expect(childValue(concurrency, "cancel-in-progress")).toBe("true");
+	});
+});
+
+/**
+ * Every workflow this suite makes claims about. The inventory test below compares it with the
+ * directory, so a workflow added without extending these assertions fails instead of going
+ * unchecked — the same failure mode as a `branches:` filter, one level up.
+ */
+const WORKFLOW_FILES = [
+	["ci.yml", ci],
+	["review.yml", review],
+	["vale.yml", valeWorkflow],
+	["dupdelta.yml", dupdelta],
+] as const;
+
+describe("workflow inventory", () => {
+	it("checks every workflow file, including vale.yml and dupdelta.yml", () => {
+		const names = WORKFLOW_FILES.map(([name]) => name);
+		expect(names).toContain("vale.yml");
+		expect(names).toContain("dupdelta.yml");
+		const onDisk = readdirSync(
+			fileURLToPath(new URL("../../.github/workflows/", import.meta.url)),
+		)
+			.filter((entry) => entry.endsWith(".yml"))
+			.sort();
+		expect([...names].sort()).toEqual(onDisk);
+	});
+});
+
 describe("runner choice", () => {
 	it("never asks for a self-hosted runner label", () => {
-		for (const [name, text] of [
-			["ci.yml", ci],
-			["review.yml", review],
-			["vale.yml", valeWorkflow],
-		] as const) {
+		for (const [name, text] of WORKFLOW_FILES) {
 			const runners = linesMatching(text, /^\s*runs-on:/);
 			expect(runners.length, `${name} declares no runner`).toBeGreaterThan(0);
 			for (const line of runners) {

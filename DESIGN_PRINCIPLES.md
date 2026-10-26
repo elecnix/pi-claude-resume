@@ -116,7 +116,9 @@ skip, loudly, when no model is configured. A change without tests is unfinished.
 CI runs on `pull_request` with no branch filter, so a stacked PR whose base is another feature
 branch is checked exactly like one against `main`. Unit tests and the type-check are required
 checks; `main` is also checked on push. Adding a `branches:` filter to `pull_request` silently
-skips stacked PRs, so a test asserts the workflow stays unfiltered.
+skips stacked PRs, so a test asserts the workflow stays unfiltered. Duplication is reported on
+every pull request by `dupdelta` and never blocks a merge, because a blocking gate would fire on
+pre-existing, already-accepted duplication, which is how a warning becomes noise.
 
 ## DP15 — Reviewers are part of the toolchain
 
