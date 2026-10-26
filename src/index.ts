@@ -6,7 +6,8 @@
  *
  * No business logic lives here (DP3): locating, parsing, rendering and idempotency all belong to
  * `src/bridge/inject.ts`. This module only adapts pi's runtime to the `BridgeHost` contract and
- * turns a `BridgeResult` into a notification (or a non-zero exit in non-interactive modes).
+ * turns a `BridgeResult` into a notification (or, in a non-interactive mode, one stderr line and
+ * an immediate exit with status 1).
  */
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { resumeClaudeSession } from "./bridge/inject.ts";
@@ -56,8 +57,8 @@ export default function piClaudeResume(pi: ExtensionAPI): void {
 			const code = result.error?.code ?? "unknown";
 			const message = result.error?.message ?? "resume failed without a diagnostic";
 			ctx.ui.notify(`Claude resume failed: ${message}`, "error");
-			// DP11: in `pi -p` / `--mode json` the process must exit non-zero instead of
-			// continuing as if the history had been imported.
+			// DP11: in `pi -p` / `--mode json` the run must stop before the model is called, instead
+			// of answering without the history and exiting 0.
 			if (isNonInteractive(ctx)) failRun(`pi-claude-resume: ${code}: ${message}`);
 			return;
 		}
@@ -79,17 +80,21 @@ function isNonInteractive(ctx: ExtensionContext): boolean {
 }
 
 /**
- * Fail a non-interactive run: put the diagnostic on stderr and make `pi` exit non-zero (DP11).
+ * Fail a non-interactive run: one diagnostic line on stderr, then exit with status 1 (DP11).
  *
- * Throwing alone is not enough. pi dispatches `session_start` through the extension runner,
- * which reports a thrown handler error through its `onError` callback ("Extension error (…):
- * …") and then carries on with the prompt, so the process would exit 0 as if the history had
- * been imported. `process.exitCode` is the one lever an extension has over the exit status of
- * the CLI, and pi's print mode leaves it untouched when its own run succeeds. The throw is kept
- * so the message reaches stderr through pi's own error reporting.
+ * Throwing is not enough. pi dispatches `session_start` through the extension runner, which
+ * reports a thrown handler error through its `onError` callback ("Extension error (…): …") and
+ * then carries on with the prompt, so `pi -p` would answer without the history and exit 0 — the
+ * exact half-resume DP11 forbids. Setting `process.exitCode` does not stop the prompt either.
+ * Only ending the process does, and it has to happen here, before the first model call.
+ *
+ * The line is written before exiting because nothing after `process.exit` runs: a failure a user
+ * cannot read is a silent failure. The throw that follows is unreachable in a real run (and
+ * keeps the `never` return type honest for callers and stubbed exits alike).
  */
 function failRun(message: string): never {
-	process.exitCode = 1;
+	process.stderr.write(`${message}\n`);
+	process.exit(1);
 	throw new Error(message);
 }
 

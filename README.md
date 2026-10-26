@@ -62,8 +62,9 @@ of silently resuming the "most recent" session (DP5, DR1).
 pi -p --claude <session-id> "continue where we left off"
 ```
 
-In `-p` mode a failure to locate, parse or render the session is written to stderr and the
-process exits non-zero; nothing is half-injected (DP11).
+In `-p` mode a failure to locate, parse or render the session writes one line to stderr and ends
+the process with status 1 before the model is called, so no turn can start without the history;
+nothing is half-injected (DP11).
 
 ## What gets imported
 

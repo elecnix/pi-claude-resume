@@ -96,6 +96,31 @@ function createCtx(options: { mode?: Mode; cwd?: string; entries?: unknown[] } =
 	return { ctx, notified, statuses };
 }
 
+/**
+ * Capture the two process-level effects a non-interactive failure must have (DP11).
+ *
+ * `process.exit` becomes a no-op so the handler unwinds normally and the test process survives;
+ * `process.stderr.write` records the line that would have reached the terminal.
+ */
+function captureProcessFailure() {
+	const written: string[] = [];
+	const exit = vi
+		.spyOn(process, "exit")
+		.mockImplementation((() => undefined) as unknown as (code?: string | number | null) => never);
+	const stderr = vi.spyOn(process.stderr, "write").mockImplementation(((chunk: unknown) => {
+		written.push(String(chunk));
+		return true;
+	}) as unknown as typeof process.stderr.write);
+	return {
+		written,
+		exit,
+		restore: () => {
+			exit.mockRestore();
+			stderr.mockRestore();
+		},
+	};
+}
+
 function okResult(overrides: Partial<BridgeResult> = {}): BridgeResult {
 	return {
 		ok: true,
@@ -426,33 +451,78 @@ describe("outcome reporting", () => {
 		const { pi, invoke, sentMessages } = createPi({ flags: { [FLAG_CLAUDE]: "latest" } });
 		const { ctx, notified, statuses } = createCtx({ mode: "tui" });
 		piClaudeResume(pi);
+		const proc = captureProcessFailure();
 
-		await expect(invoke(ctx)).resolves.toBeUndefined();
+		try {
+			await expect(invoke(ctx)).resolves.toBeUndefined();
 
-		expect(notified).toEqual([{ message: "Claude resume failed: no session matches that id", level: "error" }]);
-		expect(statuses).toEqual([]);
-		expect(sentMessages).toEqual([]);
+			expect(notified).toEqual([{ message: "Claude resume failed: no session matches that id", level: "error" }]);
+			expect(statuses).toEqual([]);
+			expect(sentMessages).toEqual([]);
+			// An interactive session keeps running: the user reads the notice and continues (DP11).
+			expect(proc.exit).not.toHaveBeenCalled();
+			expect(proc.written).toEqual([]);
+		} finally {
+			proc.restore();
+		}
 	});
 
-	it("throws with the error code and message on failure in print mode", async () => {
+	it("writes one stderr line and exits 1 on failure in print mode (DP11)", async () => {
 		resumeMock.mockResolvedValue(failResult("not-found", "no session matches that id"));
-		const { pi, invoke } = createPi({ flags: { [FLAG_CLAUDE]: "latest" } });
+		const { pi, invoke, sentMessages } = createPi({ flags: { [FLAG_CLAUDE]: "latest" } });
 		const { ctx, notified } = createCtx({ mode: "print" });
 		piClaudeResume(pi);
+		const proc = captureProcessFailure();
 
-		await expect(invoke(ctx)).rejects.toThrow(
-			"pi-claude-resume: not-found: no session matches that id",
-		);
-		expect(notified[0]?.level).toBe("error");
+		try {
+			await expect(invoke(ctx)).rejects.toThrow(
+				"pi-claude-resume: not-found: no session matches that id",
+			);
+			// One line on stderr, and an exit status pi cannot turn back into success.
+			expect(proc.written).toEqual(["pi-claude-resume: not-found: no session matches that id\n"]);
+			expect(proc.exit).toHaveBeenCalledWith(1);
+			expect(proc.exit).toHaveBeenCalledTimes(1);
+			// The exit happens inside session_start, so no turn and no injected message can follow.
+			expect(sentMessages).toEqual([]);
+			expect(notified[0]?.level).toBe("error");
+		} finally {
+			proc.restore();
+		}
 	});
 
-	it("throws on failure in json mode too", async () => {
+	it("writes one stderr line and exits 1 on failure in json mode too", async () => {
 		resumeMock.mockResolvedValue(failResult("ambiguous", "two sessions match"));
 		const { pi, invoke } = createPi({ flags: { [FLAG_CLAUDE]: "latest" } });
 		const { ctx } = createCtx({ mode: "json" });
 		piClaudeResume(pi);
+		const proc = captureProcessFailure();
 
-		await expect(invoke(ctx)).rejects.toThrow("pi-claude-resume: ambiguous: two sessions match");
+		try {
+			await expect(invoke(ctx)).rejects.toThrow("pi-claude-resume: ambiguous: two sessions match");
+			expect(proc.written).toEqual(["pi-claude-resume: ambiguous: two sessions match\n"]);
+			expect(proc.exit).toHaveBeenCalledWith(1);
+		} finally {
+			proc.restore();
+		}
+	});
+
+	it("neither exits nor writes to stderr on failure in rpc mode, so the user can continue", async () => {
+		resumeMock.mockResolvedValue(failResult("not-found", "no session matches that id"));
+		const { pi, invoke } = createPi({ flags: { [FLAG_CLAUDE]: "latest" } });
+		const { ctx, notified } = createCtx({ mode: "rpc" });
+		piClaudeResume(pi);
+		const proc = captureProcessFailure();
+
+		try {
+			await expect(invoke(ctx)).resolves.toBeUndefined();
+			expect(proc.exit).not.toHaveBeenCalled();
+			expect(proc.written).toEqual([]);
+			expect(notified).toEqual([
+				{ message: "Claude resume failed: no session matches that id", level: "error" },
+			]);
+		} finally {
+			proc.restore();
+		}
 	});
 
 	it("turns an unexpected bridge throw into an error notification in tui mode", async () => {
@@ -468,13 +538,20 @@ describe("outcome reporting", () => {
 		]);
 	});
 
-	it("rethrows an unexpected bridge throw in print mode", async () => {
+	it("reports an unexpected bridge throw as one stderr line and exit 1 in print mode", async () => {
 		resumeMock.mockRejectedValue(new Error("synthetic explosion"));
 		const { pi, invoke } = createPi({ flags: { [FLAG_CLAUDE]: "latest" } });
 		const { ctx } = createCtx({ mode: "print" });
 		piClaudeResume(pi);
+		const proc = captureProcessFailure();
 
-		await expect(invoke(ctx)).rejects.toThrow("pi-claude-resume: bridge-error: synthetic explosion");
+		try {
+			await expect(invoke(ctx)).rejects.toThrow("pi-claude-resume: bridge-error: synthetic explosion");
+			expect(proc.written).toEqual(["pi-claude-resume: bridge-error: synthetic explosion\n"]);
+			expect(proc.exit).toHaveBeenCalledWith(1);
+		} finally {
+			proc.restore();
+		}
 	});
 });
 
