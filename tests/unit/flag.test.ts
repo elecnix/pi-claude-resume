@@ -554,9 +554,11 @@ describe("outcome reporting", () => {
 			expect(proc.written).toEqual(["pi-claude-resume: not-found: no session matches that id\n"]);
 			expect(proc.exit).toHaveBeenCalledWith(1);
 			expect(proc.exit).toHaveBeenCalledTimes(1);
+			// One line, not two: pi's non-interactive notify writes to stderr as well, so the failure
+			// must not be reported there and here.
+			expect(notified).toEqual([]);
 			// The exit happens inside session_start, so no turn and no injected message can follow.
 			expect(sentMessages).toEqual([]);
-			expect(notified[0]?.level).toBe("error");
 		} finally {
 			proc.restore();
 		}
@@ -565,7 +567,7 @@ describe("outcome reporting", () => {
 	it("writes one stderr line and exits 1 on failure in json mode too", async () => {
 		resumeMock.mockResolvedValue(failResult("ambiguous", "two sessions match"));
 		const { pi, invoke } = createPi({ flags: { [FLAG_CLAUDE]: "latest" } });
-		const { ctx } = createCtx({ mode: "json" });
+		const { ctx, notified } = createCtx({ mode: "json" });
 		piClaudeResume(pi);
 		const proc = captureProcessFailure();
 
@@ -573,6 +575,7 @@ describe("outcome reporting", () => {
 			await expect(invoke(ctx)).rejects.toThrow("pi-claude-resume: ambiguous: two sessions match");
 			expect(proc.written).toEqual(["pi-claude-resume: ambiguous: two sessions match\n"]);
 			expect(proc.exit).toHaveBeenCalledWith(1);
+			expect(notified).toEqual([]);
 		} finally {
 			proc.restore();
 		}

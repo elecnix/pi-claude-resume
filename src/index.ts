@@ -50,18 +50,14 @@ export default function piClaudeResume(pi: ExtensionAPI): void {
 			// The bridge reports failures in its result; a throw means something escaped it. It is
 			// still a failed resume, so it must be visible rather than swallowed (DP11).
 			const message = error instanceof Error ? error.message : String(error);
-			ctx.ui.notify(`Claude resume failed: ${message}`, "error");
-			if (isNonInteractive(ctx)) failRun(`pi-claude-resume: bridge-error: ${message}`);
+			reportFailure(ctx, `pi-claude-resume: bridge-error: ${message}`, `Claude resume failed: ${message}`);
 			return;
 		}
 
 		if (!result.ok) {
 			const code = result.error?.code ?? "unknown";
 			const message = result.error?.message ?? "resume failed without a diagnostic";
-			ctx.ui.notify(`Claude resume failed: ${message}`, "error");
-			// DP11: in `pi -p` / `--mode json` the run must stop before the model is called, instead
-			// of answering without the history and exiting 0.
-			if (isNonInteractive(ctx)) failRun(`pi-claude-resume: ${code}: ${message}`);
+			reportFailure(ctx, `pi-claude-resume: ${code}: ${message}`, `Claude resume failed: ${message}`);
 			return;
 		}
 
@@ -79,6 +75,19 @@ export default function piClaudeResume(pi: ExtensionAPI): void {
 /** True in the modes where pi has no interactive UI and a failure must fail the process (DP11). */
 function isNonInteractive(ctx: ExtensionContext): boolean {
 	return ctx.mode === "print" || ctx.mode === "json";
+}
+
+/**
+ * Report a failed resume once, in the only way the current mode can see it (DP11).
+ *
+ * In print and json modes pi's own `ui.notify` writes to stderr, so notifying *and* failing would
+ * print the same failure twice and leave the exit status to chance. There the diagnostic goes to
+ * stderr as one line and the process ends with status 1 before any model call. Every interactive
+ * mode keeps the notification and lets the session continue.
+ */
+function reportFailure(ctx: ExtensionContext, diagnostic: string, notice: string): void {
+	if (isNonInteractive(ctx)) failRun(diagnostic);
+	ctx.ui.notify(notice, "error");
 }
 
 /**
