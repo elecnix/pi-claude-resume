@@ -33,7 +33,7 @@ The project slug is the working directory with its path separators (and dots) re
 the `.jsonl` extension.
 
 - If `CLAUDE_CONFIG_DIR` is set, the store is read from `$CLAUDE_CONFIG_DIR/projects` instead of
-  `~/.claude/projects` — the same variable Claude Code honours to relocate its config directory.
+  `~/.claude/projects` — the same variable Claude Code honours to relocate its configuration directory.
 
 ### Pass it to pi
 
