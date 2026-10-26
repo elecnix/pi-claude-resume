@@ -1,0 +1,44 @@
+name: ci
+
+# DP13 (tests are the specification) and DP14 (CI gates every branch): every pull request runs
+# the type-check and the unit tests, and `main` is checked again on push so a merge cannot land
+# unchecked.
+#
+# `pull_request` deliberately has *no* `branches:` filter. Stacked PRs target another feature
+# branch rather than `main`; a filter here would make them silently skip CI, which is the exact
+# failure DP14 exists to prevent. A unit test asserts this block stays unfiltered.
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # Deliberately a GitHub-hosted runner, not an `arc-runners` label: this is a brand-new public
+    # repository with no Hetzner ARC scale set registered, so a job asking for that label would
+    # queue forever with nothing to pick it up. Revisit only after such runners exist.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          # No lockfile is committed on purpose (.gitignore ignores package-lock.json), so
+          # setup-node has nothing to hash for its cache key by default. Point it at the
+          # manifest: `npm install` below then resolves the toolchain fresh while the npm
+          # download cache still works.
+          cache-dependency-path: package.json
+      # `npm install`, never `npm ci`: there is no committed lockfile to install from.
+      - run: npm install --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm test

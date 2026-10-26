@@ -1,0 +1,29 @@
+version: 2
+
+# Weekly dependency refresh, grouped into one PR per ecosystem and capped at five open PRs so the
+# repository does not drown in update noise. Action bumps are the ones that matter for the
+# security posture of ci.yml and review.yml (DP15: pinned, reviewed tooling).
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      npm-toolchain:
+        patterns:
+          - "*"
