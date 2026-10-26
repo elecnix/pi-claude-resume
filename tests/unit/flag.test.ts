@@ -417,6 +417,23 @@ describe("outcome reporting", () => {
 		expect(notified[0]?.message).toContain("truncated");
 	});
 
+	it("reports the dropped turns in its own notification, once (DP9)", async () => {
+		resumeMock.mockResolvedValue(
+			okResult({ truncated: true, chars: 120_000, droppedTurns: 3, droppedChars: 5_000 }),
+		);
+		const { pi, invoke } = createPi({ flags: { [FLAG_CLAUDE]: "latest" } });
+		const { ctx, notified } = createCtx({ mode: "tui" });
+		piClaudeResume(pi);
+
+		await invoke(ctx);
+
+		// The adapter is the only notifier (finding 3), so the whole truncation report has to be
+		// here, including how much of the conversation the budget cost.
+		expect(notified).toHaveLength(1);
+		expect(notified[0]?.message).toContain("transcript truncated to fit the budget");
+		expect(notified[0]?.message).toContain("3 turns dropped");
+	});
+
 	it("names counted parse losses in the success notification (DP9)", async () => {
 		resumeMock.mockResolvedValue(
 			okResult({

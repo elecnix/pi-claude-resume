@@ -37,9 +37,6 @@ export default function piClaudeResume(pi: ExtensionAPI): void {
 			sendCustomMessage: async (message) => {
 				await pi.sendMessage(message);
 			},
-			notify: (message, level) => {
-				ctx.ui.notify(message, level);
-			},
 		};
 
 		let result: BridgeResult;
@@ -111,11 +108,20 @@ function describeImported(result: BridgeResult): string {
 	const parts = [`Imported ${summarize(result)}`];
 	if (typeof result.turns === "number") parts.push(`${result.turns} turns`);
 	if (typeof result.chars === "number") parts.push(`${result.chars} chars`);
-	if (result.truncated) parts.push("transcript truncated to fit the budget");
+	if (result.truncated) parts.push(describeTruncation(result));
 	// Counted parse losses are named in the same breath as the success, so a half-parsed file is
 	// never reported as a clean import (DP9). Nothing is added when the parse was lossless.
 	if (result.parseStats !== undefined) parts.push(...describeParseLoss(result.parseStats));
 	return parts.join("; ");
+}
+
+/** Truncation is reported, never silent (DP9). */
+function describeTruncation(result: BridgeResult): string {
+	const budget = "transcript truncated to fit the budget";
+	const turns = result.droppedTurns ?? 0;
+	return turns > 0
+		? `${budget}: ${turns} turn${turns === 1 ? "" : "s"} dropped`
+		: budget;
 }
 
 /**

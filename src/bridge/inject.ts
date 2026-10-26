@@ -6,14 +6,18 @@
  * delegated to a pure module under `src/claude/`, which keeps it testable with a fake host and no
  * model, terminal, or Claude installation (DP3).
  *
- * The side effects are exactly four: one `readFile` of the located session file (DP4: read-only),
- * two host `sendCustomMessage` calls, and one host `notify`. Nothing here imports the pi API, so
- * the module itself stays pi-free; pi-shaped behaviour arrives through `BridgeHost`.
+ * The side effects are exactly three: one `readFile` of the located session file (DP4: read-only)
+ * and two host `sendCustomMessage` calls. Nothing here imports the pi API, so the module itself
+ * stays pi-free; pi-shaped behaviour arrives through `BridgeHost`.
+ *
+ * Notifications are not among those side effects on purpose: only the adapter knows the run mode,
+ * so only the adapter decides how an outcome reaches the user — a notification in tui or rpc, one
+ * stderr line and status 1 in print or json (DP11). Notifying here would report every outcome
+ * twice (finding 3).
  *
  * Failure model (DP11): every outcome is a `BridgeResult` and nothing is thrown. A failure returns
- * `ok: false` with a code and one-line message, notifies once at `error`, and sends no transcript
- * message — a session that cannot be located, read, parsed or rendered is left untouched rather
- * than half-resumed.
+ * `ok: false` with a code and one-line message and sends no transcript message — a session that
+ * cannot be located, read, parsed or rendered is left untouched rather than half-resumed.
  */
 import { readFile } from "node:fs/promises";
 
@@ -22,7 +26,6 @@ import { locateClaudeSession } from "../claude/locate.ts";
 import { parseClaudeSession } from "../claude/parse.ts";
 import { renderTranscript } from "../claude/render.ts";
 import { mapToolCall } from "../claude/toolmap.ts";
-import { describeParseLoss } from "../shared/diagnostics.ts";
 import {
 	BOUNDARY_CUSTOM_TYPE,
 	TRANSCRIPT_CUSTOM_TYPE,
@@ -33,7 +36,6 @@ import {
 	type ClaudeTranscript,
 	type ClaudeTurn,
 	type LocateResult,
-	type RenderResult,
 } from "../types.ts";
 
 /** The message shape the host accepts, kept in sync with `BridgeHost` instead of restated. */
@@ -72,7 +74,6 @@ export async function resumeClaudeSession(
 		return await runBridge(host, options);
 	} catch (error) {
 		const failure = toFailure(error);
-		notifySafely(host, `${failure.code}: ${failure.message}`, "error");
 		return {
 			ok: false,
 			messagesSent: failure.messagesSent,
@@ -99,7 +100,7 @@ async function runBridge(host: BridgeHost, options: BridgeOptions): Promise<Brid
 	}
 
 	// 3. Idempotency: a pi session that already imported this id is left alone (DP10). Nothing is
-	//    read, sent or notified — re-running pi must be indistinguishable from a no-op.
+	//    read or sent — re-running pi must be indistinguishable from a no-op.
 	if (!options.force && host.hasInjected(located.sessionId)) {
 		return {
 			ok: true,
@@ -159,9 +160,6 @@ async function runBridge(host: BridgeHost, options: BridgeOptions): Promise<Brid
 		1,
 	);
 
-	// 7. Exactly one success notification, after the session is actually complete.
-	notifySafely(host, summaryMessage(meta, transcript, rendered), "info");
-
 	return {
 		ok: true,
 		sessionId: meta.sessionId,
@@ -172,6 +170,8 @@ async function runBridge(host: BridgeHost, options: BridgeOptions): Promise<Brid
 		chars: rendered.chars,
 		estimatedTokens: rendered.estimatedTokens,
 		truncated: rendered.truncated,
+		droppedTurns: rendered.droppedTurns,
+		droppedChars: rendered.droppedChars,
 		parseStats: transcript.stats,
 		messagesSent: 2,
 	};
@@ -264,34 +264,6 @@ async function sendMessage(
 	}
 }
 
-/** The one-line success summary: what was resumed and how much of it was injected. */
-function summaryMessage(
-	meta: ClaudeSessionMeta,
-	transcript: ClaudeTranscript,
-	rendered: RenderResult,
-): string {
-	const turns = transcript.turns.length;
-	const words = [
-		`resumed Claude Code session ${meta.sessionId}`,
-		`${turns} turn${turns === 1 ? "" : "s"}`,
-		`${rendered.chars} chars (~${rendered.estimatedTokens} tokens)`,
-		describeTruncation(rendered),
-	];
-	// A half-parsed file must not be announced as a clean import (DP9, DP11).
-	words.push(...describeParseLoss(transcript.stats));
-	return words.join(" · ");
-}
-
-/** Truncation is reported, never silent (DP9). */
-function describeTruncation(rendered: RenderResult): string {
-	if (!rendered.truncated) {
-		return "complete";
-	}
-	return rendered.droppedTurns > 0
-		? `truncated, ${rendered.droppedTurns} turns dropped`
-		: "truncated";
-}
-
 /** Normalise any thrown value into the result's error branch. */
 function toFailure(error: unknown): { code: string; message: string; messagesSent: number } {
 	if (error instanceof BridgeError) {
@@ -310,16 +282,6 @@ function describeError(error: unknown): string {
 		return error.trim();
 	}
 	return "unknown error";
-}
-
-/** Notify the user, without letting a broken notifier turn a finished import into a failure. */
-function notifySafely(host: BridgeHost, message: string, level: "info" | "error"): void {
-	try {
-		host.notify(message, level);
-	} catch {
-		// A notification is a courtesy, not part of the resume. Swallowing it keeps `ok` honest
-		// about what reached the session (DP11 keeps "imported" and "failed" disjoint).
-	}
 }
 
 /** Trimmed string, or undefined when absent/blank. */

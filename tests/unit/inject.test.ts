@@ -36,6 +36,7 @@ import { locateClaudeSession } from "../../src/claude/locate.ts";
 import { parseClaudeSession } from "../../src/claude/parse.ts";
 import { renderTranscript } from "../../src/claude/render.ts";
 import { resumeClaudeSession } from "../../src/bridge/inject.ts";
+import { describeParseLoss } from "../../src/shared/diagnostics.ts";
 import { BOUNDARY_CUSTOM_TYPE, TRANSCRIPT_CUSTOM_TYPE } from "../../src/types.ts";
 
 const SESSION_ID = "0f9c1d2e-0000-4000-8000-000000000001";
@@ -72,23 +73,23 @@ interface SentMessage {
 	details?: unknown;
 }
 
-interface Notification {
-	message: string;
-	level: string;
-}
-
 interface FakeHost {
 	host: BridgeHost;
 	sent: SentMessage[];
-	notifications: Notification[];
+	/**
+	 * A notifier the bridge must never call: notifications belong to the adapter, which knows the
+	 * run mode (finding 3). The spy is attached to the fake host object even though `BridgeHost`
+	 * no longer declares `notify`; if the bridge notified again, this spy would record it.
+	 */
+	notify: ReturnType<typeof vi.fn>;
 	hasInjected: ReturnType<typeof vi.fn>;
 }
 
 function createHost(overrides: Partial<BridgeHost> = {}): FakeHost {
 	const sent: SentMessage[] = [];
-	const notifications: Notification[] = [];
+	const notify = vi.fn();
 	const hasInjected = vi.fn((_sessionId: string) => false);
-	const host: BridgeHost = {
+	const host = {
 		cwd: "/work/synthetic-project",
 		homeDir: "/home/synthetic",
 		projectsRoot: "/home/synthetic/.claude/projects",
@@ -97,12 +98,10 @@ function createHost(overrides: Partial<BridgeHost> = {}): FakeHost {
 		sendCustomMessage: vi.fn(async (message: SentMessage) => {
 			sent.push(message);
 		}),
-		notify: vi.fn((message: string, level: "info" | "warning" | "error") => {
-			notifications.push({ message, level });
-		}),
+		notify,
 		...overrides,
-	};
-	return { host, sent, notifications, hasInjected };
+	} as unknown as BridgeHost;
+	return { host, sent, notify, hasInjected };
 }
 
 let tmpDir = "";
@@ -196,18 +195,17 @@ afterEach(async () => {
 
 describe("resumeClaudeSession — option validation", () => {
 	it("rejects an empty spec with invalid-spec before touching the filesystem (DP5)", async () => {
-		const { host, sent, notifications } = createHost();
+		const { host, sent, notify } = createHost();
 
 		const result = await resumeClaudeSession(host, { spec: "" });
 
 		expect(result.ok).toBe(false);
 		expect(result.error?.code).toBe("invalid-spec");
+		expect(result.error?.message).toContain("expected a session id");
 		expect(result.messagesSent).toBe(0);
 		expect(locateClaudeSession).not.toHaveBeenCalled();
 		expect(sent).toHaveLength(0);
-		expect(notifications).toHaveLength(1);
-		expect(notifications[0]?.level).toBe("error");
-		expect(notifications[0]?.message).toContain("invalid-spec");
+		expect(notify).not.toHaveBeenCalled();
 	});
 
 	it("rejects a whitespace-only spec", async () => {
@@ -249,7 +247,7 @@ describe("resumeClaudeSession — locate failures", () => {
 			code: "not-found",
 			message: "no Claude Code session matches that id in this project",
 		});
-		const { host, sent, notifications } = createHost();
+		const { host, sent, notify } = createHost();
 
 		const result = await resumeClaudeSession(host, { spec: SESSION_ID });
 
@@ -260,8 +258,7 @@ describe("resumeClaudeSession — locate failures", () => {
 		});
 		expect(result.messagesSent).toBe(0);
 		expect(sent).toHaveLength(0);
-		expect(notifications[0]?.level).toBe("error");
-		expect(notifications[0]?.message).toContain("not-found");
+		expect(notify).not.toHaveBeenCalled();
 	});
 
 	it("propagates ambiguous", async () => {
@@ -324,7 +321,7 @@ describe("resumeClaudeSession — locate failures", () => {
 describe("resumeClaudeSession — idempotency (DP10)", () => {
 	it("skips silently when the session was already injected", async () => {
 		const path = await arrangeSession();
-		const { host, sent, notifications, hasInjected } = createHost();
+		const { host, sent, notify, hasInjected } = createHost();
 		hasInjected.mockReturnValue(true);
 
 		const result = await resumeClaudeSession(host, { spec: SESSION_ID });
@@ -335,7 +332,7 @@ describe("resumeClaudeSession — idempotency (DP10)", () => {
 		expect(result.sessionId).toBe(SESSION_ID);
 		expect(result.sessionPath).toBe(path);
 		expect(sent).toHaveLength(0);
-		expect(notifications).toHaveLength(0);
+		expect(notify).not.toHaveBeenCalled();
 		expect(parseClaudeSession).not.toHaveBeenCalled();
 		expect(renderTranscript).not.toHaveBeenCalled();
 	});
@@ -377,7 +374,7 @@ describe("resumeClaudeSession — read and parse failures (DP11)", () => {
 	it("maps a read error to unreadable and never parses", async () => {
 		const missing = sessionPath();
 		mockLocateOk(missing);
-		const { host, sent, notifications } = createHost();
+		const { host, sent, notify } = createHost();
 
 		const result = await resumeClaudeSession(host, { spec: SESSION_ID });
 
@@ -386,7 +383,7 @@ describe("resumeClaudeSession — read and parse failures (DP11)", () => {
 		expect(result.messagesSent).toBe(0);
 		expect(parseClaudeSession).not.toHaveBeenCalled();
 		expect(sent).toHaveLength(0);
-		expect(notifications[0]?.level).toBe("error");
+		expect(notify).not.toHaveBeenCalled();
 	});
 
 	it("maps a session with no turns to empty-session", async () => {
@@ -502,18 +499,15 @@ describe("resumeClaudeSession — successful injection", () => {
 			droppedApiErrors: 0,
 		};
 		await arrangeSession(FIXTURE_RAW, lossy);
-		const { host, sent, notifications } = createHost();
+		const { host, sent } = createHost();
 
 		const result = await resumeClaudeSession(host, { spec: SESSION_ID });
 
+		// A half-parsed session must not read as a clean import (DP9): the counts reach both the
+		// message the model reads and the result the adapter reports.
 		const [transcriptMessage] = expectTwoMessages(sent);
 		expect(transcriptMessage.details).toMatchObject({ parseStats: lossy.stats });
 		expect(result.parseStats).toEqual(lossy.stats);
-		// A half-parsed session must not read as a clean import (DP9): the counts appear in the
-		// summary in words a user can act on, next to the truncation report, not instead of it.
-		expect(notifications[0]?.message).toContain("3 lines could not be parsed");
-		expect(notifications[0]?.message).toContain("12 bookkeeping entries skipped");
-		expect(notifications[0]?.message).toContain("1 sub-agent entry skipped");
 	});
 
 	it("does not claim a loss when the parse dropped nothing but bookkeeping", async () => {
@@ -528,12 +522,12 @@ describe("resumeClaudeSession — successful injection", () => {
 			droppedApiErrors: 0,
 		};
 		await arrangeSession(FIXTURE_RAW, clean);
-		const { host, notifications } = createHost();
+		const { host } = createHost();
 
-		await resumeClaudeSession(host, { spec: SESSION_ID });
+		const result = await resumeClaudeSession(host, { spec: SESSION_ID });
 
-		expect(notifications[0]?.message).not.toContain("could not be parsed");
-		expect(notifications[0]?.message).not.toContain("skipped");
+		expect(result.parseStats).toEqual(clean.stats);
+		expect(describeParseLoss(clean.stats)).toEqual([]);
 	});
 
 	it("reports the truncation the renderer applied", async () => {
@@ -541,15 +535,16 @@ describe("resumeClaudeSession — successful injection", () => {
 		vi.mocked(renderTranscript).mockReturnValue(
 			syntheticRender({ chars: 400, estimatedTokens: 100, truncated: true, droppedTurns: 3, droppedChars: 5_000 }),
 		);
-		const { host, sent, notifications } = createHost();
+		const { host, sent } = createHost();
 
 		const result = await resumeClaudeSession(host, { spec: SESSION_ID });
 
 		const [transcriptMessage] = expectTwoMessages(sent);
 		expect(transcriptMessage.details).toMatchObject({ truncated: true, droppedTurns: 3 });
+		// The counts reach the adapter in the result, which is where the notification is written.
 		expect(result.truncated).toBe(true);
-		expect(notifications[0]?.message).toContain("truncated");
-		expect(notifications[0]?.message).toContain("3 turns dropped");
+		expect(result.droppedTurns).toBe(3);
+		expect(result.droppedChars).toBe(5_000);
 	});
 
 	it("counts both messages", async () => {
@@ -675,46 +670,52 @@ describe("resumeClaudeSession — successful injection", () => {
 	});
 });
 
-describe("resumeClaudeSession — notifications", () => {
-	it("notifies exactly once at info with the session, turn and char counts", async () => {
+describe("resumeClaudeSession — notification ownership (DP11)", () => {
+	it("reports a successful import in the result and notifies nobody itself", async () => {
 		await arrangeSession();
-		const { host, notifications } = createHost();
+		const { host, notify } = createHost();
 
-		await resumeClaudeSession(host, { spec: SESSION_ID });
+		const result = await resumeClaudeSession(host, { spec: SESSION_ID });
 
-		expect(notifications).toHaveLength(1);
-		const notification = notifications[0];
-		expect(notification?.level).toBe("info");
-		expect(notification?.message).toContain(SESSION_ID);
-		expect(notification?.message).toContain(`${FIXTURE_TURNS.length} turns`);
-		expect(notification?.message).toContain("120 chars");
-		expect(notification?.message).not.toContain("truncated");
-		expect(notification?.message.split("\n")).toHaveLength(1);
+		// The adapter owns the notification because only it knows the run mode (finding 3).
+		expect(notify).not.toHaveBeenCalled();
+		expect(result).toMatchObject({
+			ok: true,
+			sessionId: SESSION_ID,
+			turns: FIXTURE_TURNS.length,
+			chars: 120,
+			truncated: false,
+		});
 	});
 
-	it("notifies at error with the code and message on failure", async () => {
+	it("reports a failure in the result and notifies nobody itself", async () => {
 		vi.mocked(locateClaudeSession).mockReturnValue({
 			ok: false,
 			code: "not-found",
 			message: "no session with that id",
 		});
-		const { host, notifications } = createHost();
+		const { host, notify } = createHost();
 
-		await resumeClaudeSession(host, { spec: SESSION_ID });
+		const result = await resumeClaudeSession(host, { spec: SESSION_ID });
 
-		expect(notifications).toHaveLength(1);
-		expect(notifications[0]?.level).toBe("error");
-		expect(notifications[0]?.message).toContain("not-found");
-		expect(notifications[0]?.message).toContain("no session with that id");
+		expect(notify).not.toHaveBeenCalled();
+		expect(result.ok).toBe(false);
+		expect(result.error).toEqual({ code: "not-found", message: "no session with that id" });
 	});
 
-	it("does not notify at info when the injection failed", async () => {
-		vi.mocked(locateClaudeSession).mockReturnValue({ ok: false, code: "not-found", message: "nope" });
-		const { host, notifications } = createHost();
+	it("notifies nobody when the injection itself failed", async () => {
+		await arrangeSession();
+		const { host, notify } = createHost({
+			sendCustomMessage: async () => {
+				throw new Error("pi refused the message");
+			},
+		});
 
-		await resumeClaudeSession(host, { spec: SESSION_ID });
+		const result = await resumeClaudeSession(host, { spec: SESSION_ID });
 
-		expect(notifications.filter((entry) => entry.level === "info")).toHaveLength(0);
+		expect(notify).not.toHaveBeenCalled();
+		expect(result.ok).toBe(false);
+		expect(result.error?.code).toBe("internal");
 	});
 });
 
@@ -722,7 +723,7 @@ describe("resumeClaudeSession — host callback failures (DP11)", () => {
 	it("turns a rejected transcript send into an internal error and sends no second message", async () => {
 		await arrangeSession();
 		const attempted: SentMessage[] = [];
-		const { host, notifications } = createHost({
+		const { host } = createHost({
 			sendCustomMessage: async (message: SentMessage) => {
 				attempted.push(message);
 				throw new Error("pi refused the message");
@@ -737,7 +738,6 @@ describe("resumeClaudeSession — host callback failures (DP11)", () => {
 		expect(result.messagesSent).toBe(0);
 		expect(attempted).toHaveLength(1);
 		expect(attempted[0]?.customType).toBe(TRANSCRIPT_CUSTOM_TYPE);
-		expect(notifications[0]?.level).toBe("error");
 	});
 
 	it("reports messagesSent: 1 when only the boundary send is rejected", async () => {
@@ -759,34 +759,6 @@ describe("resumeClaudeSession — host callback failures (DP11)", () => {
 		expect(result.messagesSent).toBe(1);
 		expect(delivered).toHaveLength(1);
 		expect(delivered[0]?.customType).toBe(TRANSCRIPT_CUSTOM_TYPE);
-	});
-
-	it("does not throw when the notifier itself throws", async () => {
-		await arrangeSession();
-		const { host } = createHost({
-			notify: () => {
-				throw new Error("notifier unavailable");
-			},
-		});
-
-		const result = await resumeClaudeSession(host, { spec: SESSION_ID });
-
-		expect(result.ok).toBe(true);
-		expect(result.messagesSent).toBe(2);
-	});
-
-	it("does not throw when an error notify throws", async () => {
-		vi.mocked(locateClaudeSession).mockReturnValue({ ok: false, code: "not-found", message: "nope" });
-		const { host } = createHost({
-			notify: () => {
-				throw new Error("notifier unavailable");
-			},
-		});
-
-		const result = await resumeClaudeSession(host, { spec: SESSION_ID });
-
-		expect(result.ok).toBe(false);
-		expect(result.error?.code).toBe("not-found");
 	});
 
 	it("describes a thrown non-Error value", async () => {

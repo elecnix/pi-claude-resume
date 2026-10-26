@@ -249,7 +249,6 @@ export interface BridgeHost {
 		display: boolean;
 		details?: unknown;
 	}): void | Promise<void>;
-	notify(message: string, level: "info" | "warning" | "error"): void;
 }
 
 export interface BridgeOptions {
@@ -271,6 +270,10 @@ export interface BridgeResult {
 	chars?: number;
 	estimatedTokens?: number;
 	truncated?: boolean;
+	/** Whole turns the transcript budget removed from the middle (DP9). */
+	droppedTurns?: number;
+	/** Characters those turns cost, plus any hard-cap cut (DP9). */
+	droppedChars?: number;
 	/** What the parser read, imported and dropped; present on a successful parse (DP9). */
 	parseStats?: ParseStats;
 	error?: { code: string; message: string };
