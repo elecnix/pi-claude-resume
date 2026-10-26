@@ -61,7 +61,9 @@ export function locateClaudeSession(options: LocateOptions): LocateResult {
 		return invalid("the session spec is empty");
 	}
 
-	const home = options.homeDir ?? process.env["HOME"] ?? homedir();
+	// The home directory is data, not an environment read (DP3): the adapter passes `$HOME`, or
+	// nothing, and an absent value means the operating system's own answer.
+	const home = options.homeDir ?? homedir();
 	const projectsRoot = resolve(options.projectsRoot ?? join(home, ".claude", "projects"));
 
 	if (rawSpec === LATEST) {

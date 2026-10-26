@@ -347,6 +347,24 @@ describe("piClaudeResume", () => {
 		});
 	});
 
+	it("reads the home directory in the adapter and hands it to the bridge", async () => {
+		const saved = process.env.HOME;
+		process.env.HOME = "/fixtures/synthetic-home";
+		try {
+			const { pi, invoke } = createPi({ flags: { [FLAG_CLAUDE]: "latest" } });
+			const { ctx } = createCtx();
+			piClaudeResume(pi);
+
+			await invoke(ctx);
+
+			// The conversion core never reads the environment; the adapter does (DP3, finding 6).
+			expect(lastHost().homeDir).toBe("/fixtures/synthetic-home");
+		} finally {
+			if (saved === undefined) delete process.env.HOME;
+			else process.env.HOME = saved;
+		}
+	});
+
 	it("builds the host from ctx.cwd and pi's active tools", async () => {
 		const { pi, invoke } = createPi({
 			flags: { [FLAG_CLAUDE]: "latest" },

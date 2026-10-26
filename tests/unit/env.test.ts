@@ -7,7 +7,12 @@
  */
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { CLAUDE_CONFIG_DIR_ENV, claudeProjectsRoot } from "../../src/cli/env.ts";
+import {
+	CLAUDE_CONFIG_DIR_ENV,
+	HOME_ENV,
+	claudeProjectsRoot,
+	homeDirectory,
+} from "../../src/cli/env.ts";
 
 /** A path no machine has; only used to build expectations. */
 const SYNTHETIC_CONFIG_DIR = "/tmp/pi-claude-resume-synthetic/claude-config";
@@ -103,5 +108,47 @@ describe("claudeProjectsRoot", () => {
 		// The value survives verbatim (not trimmed in place) and no new key appeared.
 		expect(process.env[CLAUDE_CONFIG_DIR_ENV]).toBe(` ${SYNTHETIC_CONFIG_DIR} `);
 		expect({ ...process.env }).toEqual(before);
+	});
+});
+
+describe("homeDirectory", () => {
+	it("is the exact POSIX variable name", () => {
+		expect(HOME_ENV).toBe("HOME");
+	});
+
+	it("returns undefined when the variable is unset or blank", () => {
+		expect(homeDirectory({})).toBeUndefined();
+		for (const blank of ["", " ", "\t\n "]) {
+			expect(homeDirectory({ [HOME_ENV]: blank })).toBeUndefined();
+		}
+	});
+
+	it("returns the value, trimmed, so a pasted newline cannot break a path", () => {
+		expect(homeDirectory({ [HOME_ENV]: "/tmp/pi-claude-resume-synthetic/home" })).toBe(
+			"/tmp/pi-claude-resume-synthetic/home",
+		);
+		expect(homeDirectory({ [HOME_ENV]: "  /tmp/pi-claude-resume-synthetic/home\n" })).toBe(
+			"/tmp/pi-claude-resume-synthetic/home",
+		);
+	});
+
+	it("reads the environment it is given, not the process environment", () => {
+		const saved = process.env[HOME_ENV];
+		process.env[HOME_ENV] = "/tmp/pi-claude-resume-synthetic/other-home";
+		try {
+			expect(homeDirectory({ [HOME_ENV]: "/tmp/pi-claude-resume-synthetic/home" })).toBe(
+				"/tmp/pi-claude-resume-synthetic/home",
+			);
+			expect(homeDirectory()).toBe("/tmp/pi-claude-resume-synthetic/other-home");
+		} finally {
+			if (saved === undefined) delete process.env[HOME_ENV];
+			else process.env[HOME_ENV] = saved;
+		}
+	});
+
+	it("does not mutate the environment object it is given", () => {
+		const env = Object.freeze({ [HOME_ENV]: "  /tmp/pi-claude-resume-synthetic/home " });
+		expect(homeDirectory(env)).toBe("/tmp/pi-claude-resume-synthetic/home");
+		expect(env).toEqual({ [HOME_ENV]: "  /tmp/pi-claude-resume-synthetic/home " });
 	});
 });

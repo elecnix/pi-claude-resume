@@ -8,12 +8,30 @@
  * inventing a second convention. The store is still only ever opened for reading (DP4).
  *
  * Only the adapter layer may read the environment (DP3): `src/claude/locate.ts` receives the
- * resolved root as plain data, so it stays testable without touching `process.env`.
+ * resolved root and the home directory as plain data, so it stays testable without touching
+ * `process.env` and cannot pick up a variable nobody meant it to read.
  */
 import { join } from "node:path";
 
 /** The environment variable Claude Code reads to relocate its config directory. */
 export const CLAUDE_CONFIG_DIR_ENV = "CLAUDE_CONFIG_DIR";
+/** The environment variable that names the home directory on POSIX systems. */
+export const HOME_ENV = "HOME";
+
+/**
+ * `$HOME`, or `undefined` when it is unset or blank.
+ *
+ * The one place the extension reads it: `locate()` takes the home directory as data, so an
+ * unreadable environment cannot leak into the conversion core and a test never has to mutate the
+ * real `process.env` to change where `~` points (DP3). `undefined` means "no opinion", and the
+ * caller falls back to the operating system's own idea of the home directory.
+ */
+export function homeDirectory(env: NodeJS.ProcessEnv = process.env): string | undefined {
+	const home = env[HOME_ENV];
+	if (typeof home !== "string") return undefined;
+	const trimmed = home.trim();
+	return trimmed === "" ? undefined : trimmed;
+}
 
 /**
  * `<CLAUDE_CONFIG_DIR>/projects`, or `undefined` when the variable is unset or blank.

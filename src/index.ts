@@ -11,7 +11,7 @@
  */
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { resumeClaudeSession } from "./bridge/inject.ts";
-import { claudeProjectsRoot } from "./cli/env.ts";
+import { claudeProjectsRoot, homeDirectory } from "./cli/env.ts";
 import { readClaudeFlags, registerClaudeFlags } from "./cli/flag.ts";
 import { describeParseLoss } from "./shared/diagnostics.ts";
 import { TRANSCRIPT_CUSTOM_TYPE, type BridgeHost, type BridgeResult } from "./types.ts";
@@ -29,6 +29,10 @@ export default function piClaudeResume(pi: ExtensionAPI): void {
 
 		const host: BridgeHost = {
 			cwd: ctx.cwd,
+			// `$HOME` for `~` expansion and the default store location. Read here, in the adapter,
+			// because the conversion core must not touch the environment (DP3); an unset value
+			// leaves locate() on the operating system's home directory.
+			homeDir: homeDirectory(),
 			// Claude Code's own config root, when it has been relocated with CLAUDE_CONFIG_DIR;
 			// undefined leaves locate() on its `<home>/.claude/projects` default (DP4).
 			projectsRoot: claudeProjectsRoot(),

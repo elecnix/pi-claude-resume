@@ -6,6 +6,7 @@
  * test so the suite stays offline and finishes in seconds (DP13).
  */
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -162,6 +163,76 @@ describe("locateClaudeSession: direct paths", () => {
 		const root = makeRoot();
 
 		expectError(locateClaudeSession(options(join(root, "missing", "session.jsonl"), root)), "invalid-spec");
+	});
+});
+
+describe("locateClaudeSession: no environment reads (DP3)", () => {
+	const saved = process.env["HOME"];
+
+	/** Point the real process environment at a tree the test controls, and restore it after. */
+	function setHome(value: string | undefined): void {
+		if (value === undefined) delete process.env["HOME"];
+		else process.env["HOME"] = value;
+	}
+
+	afterEach(() => {
+		setHome(saved);
+	});
+
+	it("never names process.env: the adapter passes every environment-derived value in (DP3)", async () => {
+		const source = await readFile(new URL("../../src/claude/locate.ts", import.meta.url), "utf8");
+		// A behavioural test cannot tell `$HOME` apart from `os.homedir()` on POSIX, because Node
+		// derives the latter from the former; the contract is that this module does not read the
+		// environment itself, so the source is what gets asserted.
+		expect(source).not.toContain("process.env");
+	});
+
+	it("consults no configuration variable of its own for the store", () => {
+		// A whole Claude store, pointed at by the variable the adapter reads. The locator must not
+		// look at it: it takes `projectsRoot` as data (DP3, finding 6).
+		const elsewhere = makeRoot();
+		const path = writeSession(elsewhere, "-synthetic-elsewhere", "env-only-session");
+		process.env["CLAUDE_CONFIG_DIR"] = elsewhere;
+		try {
+			const result = locateClaudeSession({
+				spec: "env-only-session",
+				cwd: "/synthetic/work/repo",
+				projectsRoot: makeRoot(),
+			});
+
+			expectError(result, "not-found");
+			expect(JSON.stringify(result)).not.toContain(path);
+		} finally {
+			delete process.env["CLAUDE_CONFIG_DIR"];
+		}
+	});
+
+	it("uses the homeDir the caller passed even when HOME disagrees", () => {
+		const home = makeRoot();
+		const elsewhere = makeRoot();
+		mkdirSync(join(home, "exported"), { recursive: true });
+		const path = join(home, "exported", "given-session.jsonl");
+		writeFileSync(path, SYNTHETIC_LINE, "utf8");
+		setHome(elsewhere);
+
+		const result = locateClaudeSession({
+			spec: "~/exported/given-session.jsonl",
+			cwd: "/synthetic/work/repo",
+			homeDir: home,
+			projectsRoot: makeRoot(),
+		});
+
+		expectOk(result);
+		expect(result.path).toBe(path);
+	});
+
+	it("defaults the store to <os home>/.claude/projects when nothing is supplied", () => {
+		// Only the shape is asserted: the real home is never read or written by this suite.
+		setHome(undefined);
+		const result = locateClaudeSession({ spec: "no-such-synthetic-session", cwd: "/synthetic/work/repo" });
+
+		expectError(result, "not-found");
+		expect(result.message).toContain(join(".claude", "projects"));
 	});
 });
 
