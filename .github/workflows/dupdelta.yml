@@ -29,7 +29,7 @@ jobs:
     steps:
       # Pinned to a full 40-character commit SHA, never a tag: a moved tag would silently change
       # the code that runs on every pull request.
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           # The merge-base has to be reachable: it is what the action scans as "before", and a
           # shallow clone has no common ancestor to compare against.
@@ -37,4 +37,4 @@ jobs:
           persist-credentials: false
       # No inputs: the action downloads its own release binary, so there is no build step here
       # and no version to pass. The SHA is a release, named in the comment.
-      - uses: elecnix/dupdelta@658504a2c2fc19ced01337e2e84c79aa4699a7a7  # v0.2.0
+      - uses: elecnix/dupdelta@c95b985a8e9ba75c1473f2fe3695d8478f869d53  # v0.3.0
