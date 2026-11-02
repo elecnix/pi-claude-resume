@@ -1,0 +1,2 @@
+{"type":"user","uuid":"00000000-0000-4000-8000-000000000201","message":{"role":"user","content":"Ada: what does the parse step do?"}}
+{"type":"assistant","uuid":"00000000-0000-4000-8000-000000000202","parentUuid":"00000000-0000-4000-8000-000000000201","message":{"role":"assistant","model":"claude-synthetic-3","content":[{"type":"text","text":"It turns the session log into turns."}]}}

@@ -1,0 +1,40 @@
+name: dupdelta
+
+# Reports the duplication a pull request introduces: the action scans the branch and its
+# merge-base and diffs the two, so what the repository already had stays quiet and only what this
+# change adds is annotated on the pull request. Advisory by construction — dupdelta warns and
+# never exits non-zero on a finding — because a blocking gate would fire on pre-existing,
+# already-accepted duplication, which is how a warning becomes noise.
+#
+# `pull_request` deliberately has *no* `branches:` filter, for the reason ci.yml gives (DP14):
+# stacked PRs target another feature branch rather than `main`, and a filter here would make them
+# silently skip the report. A unit test asserts this block stays unfiltered.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  # The findings are pull-request annotations, so the token may write them there.
+  pull-requests: write
+
+concurrency:
+  # One scan per pull request, and a push supersedes the run it replaced rather than queueing
+  # behind it. Nothing is published, so cancelling costs nothing.
+  group: dupdelta-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  dupdelta:
+    runs-on: ubuntu-latest
+    steps:
+      # Pinned to a full 40-character commit SHA, never a tag: a moved tag would silently change
+      # the code that runs on every pull request.
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5
+        with:
+          # The merge-base has to be reachable: it is what the action scans as "before", and a
+          # shallow clone has no common ancestor to compare against.
+          fetch-depth: 0
+          persist-credentials: false
+      # No inputs: the action downloads its own release binary, so there is no build step here
+      # and no version to pass. The SHA is a release, named in the comment.
+      - uses: elecnix/dupdelta@658504a2c2fc19ced01337e2e84c79aa4699a7a7  # v0.2.0

@@ -46,6 +46,8 @@ export interface ClaudeRawEntry {
 	leafUuid?: string;
 	aiTitle?: string;
 	message?: ClaudeRawMessage;
+	/** Carried by `system` entries, notably a `compact_boundary` whose content is a summary. */
+	content?: string | ClaudeRawBlock[];
 	[key: string]: unknown;
 }
 
@@ -120,6 +122,7 @@ export interface ClaudeSessionMeta {
 }
 
 export interface ParseStats {
+	/** Non-blank lines read. Every well-formed entry lands in exactly one bucket below. */
 	rawLines: number;
 	parsedEntries: number;
 	malformedLines: number;
@@ -174,7 +177,7 @@ export type LocateResult =
 // ---------------------------------------------------------------------------
 
 export interface ToolMapping {
-	/** pi tool name, or a declared placeholder name for an unmappable call. */
+	/** pi tool name, or a declared placeholder name for a call that cannot be mapped. */
 	piName: string;
 	/** Arguments in pi's shape, best effort. */
 	input: Record<string, unknown>;
@@ -194,6 +197,11 @@ export interface RenderOptions {
 	maxToolResultChars?: number;
 	maxToolInputChars?: number;
 	mapTool?: ToolMapper;
+	/**
+	 * pi tool names active in this session, so a mapped call pi does not have can be marked as
+	 * unavailable rather than passed off as a native call (DP7). Falls back to pi's own built-ins.
+	 */
+	piTools?: readonly string[];
 }
 
 export interface RenderResult {
@@ -202,10 +210,14 @@ export interface RenderResult {
 	chars: number;
 	/** Approximate token count (`chars / 4`), for reporting only. */
 	estimatedTokens: number;
+	/**
+	 * True when anything was cut, including per-tool-result and per-tool-input caps — so
+	 * `droppedTurns === 0` does not mean nothing was removed.
+	 */
 	truncated: boolean;
-	/** Number of turns removed entirely from the middle by the budget. */
+	/** Number of turns removed entirely from the middle by the total budget. */
 	droppedTurns: number;
-	/** Characters dropped from the middle, for the omission marker. */
+	/** Characters removed from the middle only; per-payload cuts are not counted here. */
 	droppedChars: number;
 }
 
@@ -242,7 +254,6 @@ export interface BridgeHost {
 		display: boolean;
 		details?: unknown;
 	}): void | Promise<void>;
-	notify(message: string, level: "info" | "warning" | "error"): void;
 }
 
 export interface BridgeOptions {
@@ -264,6 +275,12 @@ export interface BridgeResult {
 	chars?: number;
 	estimatedTokens?: number;
 	truncated?: boolean;
+	/** Whole turns the transcript budget removed from the middle (DP9). */
+	droppedTurns?: number;
+	/** Characters those turns cost, plus any hard-cap cut (DP9). */
+	droppedChars?: number;
+	/** What the parser read, imported and dropped; present on a successful parse (DP9). */
+	parseStats?: ParseStats;
 	error?: { code: string; message: string };
 }
 

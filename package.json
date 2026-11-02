@@ -25,9 +25,9 @@
     ]
   },
   "scripts": {
-    "test": "vitest run --dir tests/unit",
-    "test:unit": "vitest run --dir tests/unit",
-    "test:integration": "vitest run --dir tests/integration",
+    "test": "vitest run",
+    "test:unit": "vitest run",
+    "test:integration": "vitest run --config tests/integration/vitest.config.ts",
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {

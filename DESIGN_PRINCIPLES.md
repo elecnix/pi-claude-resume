@@ -62,7 +62,9 @@ tool names and argument shapes are mapped to pi's (`Bash` → `bash`, `Read` →
 `Edit` → `edit` with pi's `edits[]` array, `Grep`/`Glob` → `bash` with a real command, …).
 Where a faithful mapping is impossible the call is rendered as a declared, lossy placeholder
 that says so — never as a silently plausible call. The mapping table is data, tested one row at
-a time.
+a time. Command text the mapping generates (`Grep` → a quoted `rg` line) is inert data recorded in
+the transcript for the model to read; the extension never executes it, and a placeholder carries
+a no-op command that names the original tool.
 
 ## DP8 — Every resumed session says where it is
 
@@ -76,8 +78,10 @@ session, read at runtime — not a hardcoded list that drifts. (See DR2.)
 A Claude session can be arbitrarily large; a model context is not. The injected transcript is
 capped (default 120 000 characters), keeping the head (the original task) and the tail (the most
 recent state) and replacing the middle with an explicit omission marker that states how much was
-dropped. Per-tool-result and per-tool-input caps apply on top. Truncation is reported in the
-result and visible in the transcript, never silent.
+dropped. Per-tool-result and per-tool-input caps apply on top. When even the smallest keep set busts the
+budget, the final text is at most the budget plus the omission marker it inserts, and that cut is
+counted in what the result reports. Truncation is reported in the result and visible in the
+transcript, never silent.
 
 ## DP10 — Idempotent and resumable
 
@@ -112,13 +116,21 @@ skip, loudly, when no model is configured. A change without tests is unfinished.
 CI runs on `pull_request` with no branch filter, so a stacked PR whose base is another feature
 branch is checked exactly like one against `main`. Unit tests and the type-check are required
 checks; `main` is also checked on push. Adding a `branches:` filter to `pull_request` silently
-skips stacked PRs, so a test asserts the workflow stays unfiltered.
+skips stacked PRs, so a test asserts the workflow stays unfiltered. Duplication is reported on
+every pull request by `dupdelta` and never blocks a merge, because a blocking gate would fire on
+pre-existing, already-accepted duplication, which is how a warning becomes noise.
 
 ## DP15 — Reviewers are part of the toolchain
 
 `elecnix/cite` reviews every pull request and its findings are addressed before merge, the same
-way a failing test is. A review comment that contradicts these principles is answered with a
-citation to the principle it disagrees with — or with an amendment to this file.
+way a failing test is. The provider is fixed in the workflow rather than selected by a repository
+variable, because a silent provider switch changes review behaviour with no diff. A review comment
+that contradicts these principles is answered with a citation to the principle it disagrees with —
+or with an amendment to this file.
+
+The prose is linted too: `vale --config=.vale.ini .` runs on every pull request, because a
+misspelling or a doubled word in the documentation is a defect of the same kind as a failing test,
+not a matter of taste.
 
 ## Decision records
 
@@ -126,14 +138,16 @@ citation to the principle it disagrees with — or with an amendment to this fil
 
 Claude Code's own `--resume` takes a session id or opens a picker; it does not accept prefixes.
 Mirroring that keeps behaviour predictable, and an explicit `latest` keyword covers the one case
-where "the newest session for this directory" is genuinely what the user means. Prefix matching
-was rejected because two sessions in the same project can differ by one character in the last
-few bytes of a UUID.
+where "the newest session for this directory" is genuinely what the user means. `latest` is scoped
+to the project directory for the current working directory and widens to the whole store only when
+that directory does not exist at all; an existing but empty directory is a `not-found`, not an
+invitation to borrow another project's conversation. Prefix matching was rejected because two
+sessions in the same project can differ by one character in the last few bytes of a UUID.
 
 ### DR2 — The boundary notice is a custom message, not a rewrite of the system prompt
 
 Pi's system prompt is authoritative and is rebuilt per run by pi itself; an extension that
-appended text to it would produce a session whose prompt no longer matches the tool loadout pi
+appended text to it would produce a session whose prompt no longer matches the tools pi
 declares. A custom message at the tail of the imported history carries the same information where
 the model will definitely read it, survives compaction ordering, and is visible in the transcript
 when the user wants to audit what was injected.
